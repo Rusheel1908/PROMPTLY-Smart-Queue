@@ -1,4 +1,5 @@
 import type { CounterStatus, Token, TokenClass } from '@prisma/client';
+import { restoreDemoDataset } from '../demo/dataset.js';
 import { explainPick, pickNext } from '../engine/dispatcher.js';
 import { observe } from '../engine/duration.js';
 import { forecast } from '../engine/forecast.js';
@@ -336,12 +337,13 @@ export async function spawnDemo(count: number) {
 }
 
 export const resetDemo = (actor: string) => serial(async () => {
-  await prisma.$transaction([
-    prisma.etaChange.deleteMany(),
-    prisma.token.deleteMany(),
-    prisma.event.deleteMany(),
-    prisma.counter.updateMany({ data: { status: 'OPEN' } }),
-  ]);
+  await prisma.$transaction(async (tx) => {
+    await tx.etaChange.deleteMany();
+    await tx.token.deleteMany();
+    await tx.event.deleteMany();
+    await tx.counter.updateMany({ data: { status: 'OPEN' } });
+    await restoreDemoDataset(tx); // skills changed during a demo (e.g. an applied suggestion) go back to the seeded layout
+  });
   await logEvent('DEMO_RESET', { actor });
   await replan('Demo reset');
   queueSignals.emit('counters-changed'); // every counter reopened
