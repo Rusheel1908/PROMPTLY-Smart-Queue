@@ -1,6 +1,6 @@
 import { Route, Routes } from 'react-router-dom';
 import { Layout } from './components/Layout';
-import { StaffGate } from './components/StaffGate';
+import { StaffGate, StaffProvider } from './components/StaffGate';
 import { ToastProvider } from './components/ui';
 import Board from './pages/Board';
 import Counter from './pages/Counter';
@@ -12,16 +12,18 @@ import Status from './pages/Status';
 export default function App() {
   return (
     <ToastProvider>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Kiosk />} />
-          <Route path="/counter" element={<StaffGate title="Counter console"><Counter /></StaffGate>} />
-          <Route path="/board" element={<Board />} />
-          <Route path="/status/:id" element={<Status />} />
-          <Route path="/ops" element={<StaffGate title="Supervisor ops"><Ops /></StaffGate>} />
-          <Route path="/lab" element={<Lab />} />
-        </Routes>
-      </Layout>
+      <StaffProvider>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<Kiosk />} />
+            <Route path="/counter" element={<StaffGate title="Counter console"><Counter /></StaffGate>} />
+            <Route path="/board" element={<Board />} />
+            <Route path="/status/:id" element={<Status />} />
+            <Route path="/ops" element={<StaffGate title="Supervisor ops" need="staff-stats"><Ops /></StaffGate>} />
+            <Route path="/lab" element={<Lab />} />
+          </Routes>
+        </Layout>
+      </StaffProvider>
     </ToastProvider>
   );
 }

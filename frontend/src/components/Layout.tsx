@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { cx } from '../lib/format';
 import { useConnected, useNow } from '../lib/live';
+import { StaffBadge } from './StaffGate';
 import { LiveDot } from './ui';
 
 const LINKS = [
@@ -42,6 +43,7 @@ export function Layout({ children }: { children: ReactNode }) {
               </NavLink>
             ))}
           </nav>
+          <StaffBadge />
           <LiveDot on={connected} />
           <span className="tabular hidden text-sm text-white/70 sm:inline">{new Date(now).toLocaleTimeString()}</span>
         </div>

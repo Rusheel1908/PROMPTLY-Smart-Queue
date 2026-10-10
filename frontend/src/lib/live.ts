@@ -40,7 +40,7 @@ export function useConnected() {
 
 /**
  * Live queue snapshot: fetched once, re-fetched (coalesced) on every "queue" ping.
- * Staff screens get the full Snapshot (the api helper sends the PIN); public screens type it as PublicSnapshot.
+ * Staff screens get the full Snapshot (the api helper sends the session token); public screens type it as PublicSnapshot.
  */
 export function useSnapshot<S extends PublicSnapshot = Snapshot>() {
   const [snap, setSnap] = useState<S | null>(null);
@@ -69,7 +69,7 @@ export function useSnapshot<S extends PublicSnapshot = Snapshot>() {
 }
 
 /**
- * Supervisor suggestions: fetched with the staff PIN (the api helper sends it) and re-fetched on the
+ * Supervisor suggestions: fetched with the staff session (the api helper sends it) and re-fetched on the
  * bare "suggestions-updated" ping. The details never travel over the public WebSocket.
  */
 export function useSuggestions() {

@@ -1,9 +1,10 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  AlertTriangle, BellRing, CheckCheck, Clock, Lightbulb, Megaphone, PhoneMissed, Play, Shuffle, Sparkles, UserRoundX,
+  AlertTriangle, BellRing, CheckCheck, Clock, Lightbulb, Lock, Megaphone, PhoneMissed, Play, Shuffle, Sparkles, UserRoundX,
   type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { useStaff } from '../components/StaffGate';
 import { Button, Card, Chip, Empty, Kbd, Modal, Segmented, Skeleton, useAction } from '../components/ui';
 import { api } from '../lib/api';
 import { CLASS_META, COUNTER_META, cx, describeEvent, fmtAgo, fmtDuration, fmtMin, serviceIcon } from '../lib/format';
@@ -70,13 +71,20 @@ export default function Counter() {
   );
 }
 
+/** Open / pause / close: supervisors only (the server enforces it; staff see it greyed out). */
 function StatusControl({ counter, onDone }: { counter: CounterT; onDone: () => void }) {
   const { run } = useAction();
+  const { can } = useStaff();
+  const allowed = can('counter-update');
   const set = (status: CounterStatus) => run('status', () => api(`/counters/${counter.id}`, { method: 'PATCH', json: { status } }),
     () => `${counter.name} ${COUNTER_META[status].label.toLowerCase()}. Queue re-planned`).then(onDone);
   return (
-    <Segmented id="status" value={counter.status} onChange={set}
-      options={(['OPEN', 'PAUSED', 'CLOSED'] as const).map((s) => ({ value: s, label: <span className="flex items-center gap-1.5"><span className={cx('size-2 rounded-full', COUNTER_META[s].dot)} />{COUNTER_META[s].label}</span> }))} />
+    <div className={cx('flex items-center gap-2', !allowed && 'pointer-events-none opacity-50')} aria-disabled={!allowed}
+      title={allowed ? undefined : 'Only a supervisor can open, pause or close a counter'}>
+      {!allowed && <Lock className="size-4 text-muted" />}
+      <Segmented id="status" value={counter.status} onChange={set}
+        options={(['OPEN', 'PAUSED', 'CLOSED'] as const).map((s) => ({ value: s, label: <span className="flex items-center gap-1.5"><span className={cx('size-2 rounded-full', COUNTER_META[s].dot)} />{COUNTER_META[s].label}</span> }))} />
+    </div>
   );
 }
 

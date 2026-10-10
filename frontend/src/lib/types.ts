@@ -26,6 +26,7 @@ export type BoardToken = Pick<Token, 'code' | 'serviceId' | 'state' | 'counterId
 
 export interface QueueEvent {
   seq: number; ts: string; type: string; payload: Record<string, unknown> | null; code: string | null; counter: string | null;
+  actor: string | null; actorName: string | null; // staff id (or kiosk/system) and its display name
 }
 
 export interface Metrics {
@@ -43,7 +44,7 @@ export interface Snapshot {
   metrics: Metrics;
 }
 
-/** Snapshot without the staff PIN (Board, Kiosk). The staff Snapshot is a superset of it. */
+/** Snapshot without a staff session (Board, Kiosk). The staff Snapshot is a superset of it. */
 export interface PublicSnapshot extends Omit<Snapshot, 'counters' | 'tokens' | 'recentCalls'> {
   counters: (Pick<Counter, 'id' | 'name' | 'status'> & { current: BoardToken | null })[];
   tokens: BoardToken[];
@@ -97,4 +98,23 @@ export interface Suggestions {
   computedAt: string;
   timing: { screenMs: number; rescoreMs: number; totalMs: number; candidates: number; waiting: number };
   suggestions: Suggestion[];
+}
+
+/* ---------- staff accounts ---------- */
+
+export type StaffRole = 'STAFF' | 'SUPERVISOR';
+export interface StaffUser { id: string; name: string; role: StaffRole }
+/** Action names from the backend PERMISSIONS table (backend/src/lib/permissions.ts). */
+export type Permission =
+  | 'call-next' | 'recall' | 'ack' | 'complete' | 'miss' | 'redirect' | 'issue-priority' | 'view-token' | 'reactivate'
+  | 'counter-update' | 'whatif' | 'view-suggestions' | 'apply-suggestion' | 'staff-stats' | 'lab-run' | 'demo';
+/** GET /api/auth/me */
+export interface Me { staff: StaffUser; expiresAt: string; permissions: Permission[] }
+export interface LoginResult { token: string; staff: StaffUser; expiresAt: string }
+
+/** GET /api/ops/staff-stats (supervisor only): today's per-staff miss audit. */
+export interface StaffStats {
+  teamRate: number | null;
+  rules: { minCalls: number; flagRatio: number; minExcess: number };
+  staff: { staffId: string; name: string; calls: number; completes: number; misses: number; missRate: number | null; flagged: boolean }[];
 }

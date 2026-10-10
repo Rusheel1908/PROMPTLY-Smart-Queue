@@ -3,8 +3,9 @@ import { AlertTriangle, ArrowRight, Check, Clock, ExternalLink, Lock, Ticket, Us
 import { QRCodeSVG } from 'qrcode.react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, Card, Skeleton, useAction } from '../components/ui';
-import { api, staffPin } from '../lib/api';
+import { LoginForm, useStaff } from '../components/StaffGate';
+import { Button, Card, Modal, Skeleton, useAction } from '../components/ui';
+import { api } from '../lib/api';
 import { CLASS_META, cx, fmtClock, fmtMin, serviceIcon, statusLink } from '../lib/format';
 import { useSnapshot } from '../lib/live';
 import type { PublicSnapshot, Service, Token, TokenClass } from '../lib/types';
@@ -17,7 +18,8 @@ export default function Kiosk() {
   const { snap } = useSnapshot<PublicSnapshot>();
   const [serviceId, setServiceId] = useState<string | null>(null);
   const [cls, setCls] = useState<TokenClass>('NORMAL');
-  const [staff, setStaff] = useState(() => !!staffPin.get());
+  const { can, logout } = useStaff();
+  const staff = can('issue-priority');
   const [pinPrompt, setPinPrompt] = useState<TokenClass | null>(null);
   const [ticket, setTicket] = useState<Issued | null>(null);
   const { run, busy } = useAction();
@@ -62,7 +64,7 @@ export default function Kiosk() {
           <div>
             <div className="flex items-center justify-between text-sm font-semibold text-ink-2">
               <span>2. Customer type</span>
-              {staff && <button onClick={() => { staffPin.clear(); setStaff(false); setCls('NORMAL'); }} className="text-xs text-muted hover:text-ink">Lock staff mode</button>}
+              {staff && <button onClick={() => { logout(); setCls('NORMAL'); }} className="text-xs text-muted hover:text-ink">Lock staff mode (log out)</button>}
             </div>
             <div className="mt-2 grid grid-cols-2 gap-2">
               {CLASSES.map((c) => {
@@ -88,7 +90,10 @@ export default function Kiosk() {
         </Card>
       </aside>
 
-      <PinPrompt cls={pinPrompt} onClose={() => setPinPrompt(null)} onOk={(c) => { setStaff(true); setCls(c); setPinPrompt(null); }} />
+      <Modal open={!!pinPrompt} onClose={() => setPinPrompt(null)} title="Staff verification">
+        <p className="mb-4 text-sm text-ink-2">{pinPrompt && CLASS_META[pinPrompt].label} needs a staff member to log in and verify it.</p>
+        <LoginForm onLoggedIn={() => { pinPrompt && setCls(pinPrompt); setPinPrompt(null); }} />
+      </Modal>
       <AnimatePresence>{ticket && <TicketOverlay t={ticket} onClose={() => setTicket(null)} />}</AnimatePresence>
     </div>
   );
@@ -131,35 +136,6 @@ function ServiceCard({ s, selected, onSelect, index }: { s: Service; selected: b
         <span className="flex items-center gap-1.5 text-muted"><Users className="size-4" /> {s.waiting} waiting</span>
       </div>
     </motion.button>
-  );
-}
-
-function PinPrompt({ cls, onClose, onOk }: { cls: TokenClass | null; onClose: () => void; onOk: (c: TokenClass) => void }) {
-  const [pin, setPin] = useState('');
-  const [err, setErr] = useState('');
-  const submit = async () => {
-    staffPin.set(pin);
-    await api('/auth/check').then(() => onOk(cls!)).catch(() => { staffPin.clear(); setErr('Wrong PIN'); });
-    setPin('');
-  };
-  return (
-    <AnimatePresence>
-      {cls && (
-        <motion.div className="fixed inset-0 z-50 grid place-items-center bg-navy/40 p-4 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
-          <motion.form initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }} onClick={(e) => e.stopPropagation()}
-            onSubmit={(e) => { e.preventDefault(); submit(); }} className="w-full max-w-xs rounded-2xl bg-white p-6 text-center shadow-2xl">
-            <Lock className="mx-auto size-8 text-navy" />
-            <div className="mt-2 font-bold">Staff verification</div>
-            <div className="text-sm text-ink-2">{CLASS_META[cls].label} needs a staff PIN.</div>
-            <input autoFocus type="password" inputMode="numeric" value={pin} onChange={(e) => { setPin(e.target.value); setErr(''); }}
-              className="mt-4 h-12 w-full rounded-xl text-center text-xl tracking-[0.4em] ring-1 ring-line outline-none focus:ring-2 focus:ring-brand" placeholder="••••" />
-            {err && <div className="mt-2 text-sm text-critical">{err}</div>}
-            <Button type="submit" className="mt-4 w-full" disabled={!pin}>Verify</Button>
-            <div className="mt-2 text-xs text-muted">Demo PIN: 1234</div>
-          </motion.form>
-        </motion.div>
-      )}
-    </AnimatePresence>
   );
 }
 

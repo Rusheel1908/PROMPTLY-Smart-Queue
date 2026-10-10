@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
-import { PinForm, useStaff } from '../components/StaffGate';
+import { LoginForm, useStaff } from '../components/StaffGate';
 import { Button, Card, Chip, Modal, Segmented, Skeleton, useToast } from '../components/ui';
 import { api, ApiError } from '../lib/api';
 import { cx, fmtClock, pct } from '../lib/format';
@@ -37,7 +37,8 @@ const NOTICE_TONE = { warn: 'bg-amber-50 text-amber-900 ring-amber-200', bad: 'b
 /** How a refused live run is explained; anything else shows the server's message. */
 const RUN_ERRORS: Record<number, Notice> = {
   409: { tone: 'warn', text: 'A live run is already in progress (maybe started from another screen). Try again when it finishes.' },
-  401: { tone: 'warn', text: 'The staff PIN is required to run live. Enter it and try again.' },
+  401: { tone: 'warn', text: 'Live runs need a supervisor login. Log in and try again.' },
+  403: { tone: 'warn', text: 'Live runs need a supervisor account. The saved result below is still up to date.' },
 };
 
 const fmtDate = (d?: string) => (d ? new Date(d).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
@@ -93,7 +94,7 @@ export default function Lab() {
       if (stopped) return;
       isFinished(j) ? (stop(j), ON_FINISH[j.status as 'done' | 'failed'](j)) : setJob(j);
     }).catch((e) => {
-      // the server answered (job gone, PIN changed): give up; network blips just retry
+      // the server answered (job gone, logged out): give up; network blips just retry
       e instanceof ApiError && !stopped && (stop(null), setNotice({ tone: 'bad', text: `Lost track of the live run: ${e.message}` }));
     });
     const poll = setInterval(() => check.current(), POLL_MS);
@@ -110,11 +111,11 @@ export default function Lab() {
       .then(({ jobId: id }) => setJob({ id, status: 'queued', createdAt: new Date().toISOString() }))
       .catch((e: ApiError) => {
         setNotice(RUN_ERRORS[e.status] ?? { tone: 'bad', text: e.message });
-        e.status === 401 && (staff.lock(), setAskPin(true));
+        e.status === 401 && setAskPin(true);
       })
       .finally(() => setPosting(false));
   };
-  const runLive = () => (staff.phase === 'open' ? start() : setAskPin(true));
+  const runLive = () => (staff.phase !== 'in' ? setAskPin(true) : staff.can('lab-run') ? start() : setNotice(RUN_ERRORS[403]));
 
   const result = showLive && live ? live : saved;
   const by = Object.fromEntries((result?.results ?? []).map((r) => [r.id, r]));
@@ -137,8 +138,8 @@ export default function Lab() {
           <span className="font-semibold text-ink-2">Seed</span>
           <input type="number" min={1} value={seed} onChange={(e) => setSeed(Math.max(1, +e.target.value || 1))} className="h-10 w-24 rounded-xl px-3 ring-1 ring-line outline-none focus:ring-2 focus:ring-brand" />
         </label>
-        <Button size="lg" icon={staff.phase === 'open' ? Play : Lock} loading={posting || running} onClick={runLive} className="ml-auto">
-          {running ? `Running… ${pct(progress)} · ${(elapsed / 1000).toFixed(1)}s` : staff.phase === 'open' ? 'Run live' : 'Run live (staff)'}
+        <Button size="lg" icon={staff.can('lab-run') ? Play : Lock} loading={posting || running} onClick={runLive} className="ml-auto">
+          {running ? `Running… ${pct(progress)} · ${(elapsed / 1000).toFixed(1)}s` : staff.can('lab-run') ? 'Run live' : 'Run live (supervisor)'}
         </Button>
         {running && (
           <div className="basis-full">
@@ -195,9 +196,9 @@ export default function Lab() {
         )}
       </AnimatePresence>
 
-      <Modal open={askPin} onClose={() => setAskPin(false)} title="Staff PIN to run live">
-        <p className="mb-4 text-sm text-ink-2">Live runs use server CPU, so only staff can start one. The saved result stays visible to everyone.</p>
-        <PinForm unlock={staff.unlock} onUnlocked={() => { setAskPin(false); start(); }} />
+      <Modal open={askPin} onClose={() => setAskPin(false)} title="Supervisor login to run live">
+        <p className="mb-4 text-sm text-ink-2">Live runs use server CPU, so only a supervisor can start one. The saved result stays visible to everyone.</p>
+        <LoginForm onLoggedIn={() => { setAskPin(false); start(); }} />
       </Modal>
     </div>
   );

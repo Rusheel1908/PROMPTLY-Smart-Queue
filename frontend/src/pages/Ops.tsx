@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { StaffStats } from '../components/StaffStats';
 import { SuggestedActions } from '../components/SuggestedActions';
 import { Button, Card, Modal, Stat, useAction } from '../components/ui';
 import { api } from '../lib/api';
@@ -66,6 +67,8 @@ export default function Ops() {
 
       {snap && <Planner snap={snap} draft={draft} setDraft={setDraft} onApplied={refresh} />}
 
+      <StaffStats version={snap?.events[0]?.seq} />
+
       <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
         {snap && <RiskHeatmap snap={snap} />}
         {snap && <WaitsByClass waits={snap.metrics.waitByClass} />}
@@ -78,7 +81,10 @@ export default function Ops() {
             {(snap?.events ?? []).slice(0, 20).map((e) => (
               <motion.li key={e.seq} layout initial={{ opacity: 0, backgroundColor: '#eef4fd' }} animate={{ opacity: 1, backgroundColor: '#ffffff00' }} transition={{ duration: 1.2 }}
                 className="flex justify-between gap-3 rounded-md px-1">
-                <span className="truncate text-ink-2">{describeEvent(e)}</span>
+                <span className="truncate text-ink-2">
+                  {describeEvent(e)}
+                  {e.actorName && <span className="ml-1.5 text-xs text-muted">· {e.actorName}</span>}
+                </span>
                 <span className="shrink-0 text-xs text-muted">{fmtAgo(e.ts, now)}</span>
               </motion.li>
             ))}

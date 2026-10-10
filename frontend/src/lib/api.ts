@@ -1,25 +1,31 @@
 const BASE = import.meta.env.VITE_API_URL ?? '';
-const PIN_KEY = 'promptly.staffPin';
+const SESSION_KEY = 'promptly.session';
 
-const storage = {
-  get: () => { try { return localStorage.getItem(PIN_KEY) ?? ''; } catch { return ''; } },
-  set: (v: string) => { try { localStorage.setItem(PIN_KEY, v); } catch { /* private mode */ } },
+/** The staff session token, per browser tab (sessionStorage), so closing the tab logs out. */
+export const session = {
+  get: () => { try { return sessionStorage.getItem(SESSION_KEY) ?? ''; } catch { return ''; } },
+  set: (token: string) => { try { sessionStorage.setItem(SESSION_KEY, token); } catch { /* private mode */ } },
+  clear: () => { try { sessionStorage.removeItem(SESSION_KEY); } catch { /* private mode */ } },
 };
 
-export const staffPin = { get: storage.get, set: storage.set, clear: () => storage.set('') };
+/** Called when the server rejects our session (expired, logged out elsewhere), so the app can show the login screen. */
+let onSessionLost = () => undefined as void;
+export const setOnSessionLost = (fn: () => void) => { onSessionLost = fn; };
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
 export async function api<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
+  const token = session.get();
   const res = await fetch(`${BASE}/api${path}`, {
     ...init,
     method: init?.method ?? (init?.json === undefined ? 'GET' : 'POST'),
-    headers: { 'Content-Type': 'application/json', 'x-staff-pin': staffPin.get(), ...init?.headers },
+    headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }), ...init?.headers },
     body: init?.json === undefined ? init?.body : JSON.stringify(init.json),
   });
   const body = await res.json().catch(() => ({}));
+  res.status === 401 && token && (session.clear(), onSessionLost());
   res.ok || raise(new ApiError(res.status, body.error ?? res.statusText));
   return body as T;
 }
