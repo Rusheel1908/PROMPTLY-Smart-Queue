@@ -12,3 +12,7 @@
 @keyframes lp-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 .lp-pulse { animation: lp-pulse 1.8s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .lp-pulse { animation: none; } }
+
+/* Signal-yellow focus ring on the dark landing page. Unlayered and scoped, so it beats the app's global
+   :focus-visible rule (brand blue) here only; the app screens keep theirs. */
+.lp-root :focus-visible { outline: 2px solid #ffc21a; outline-offset: 3px; border-radius: 12px; }

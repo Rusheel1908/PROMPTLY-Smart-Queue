@@ -4,12 +4,11 @@ import { Link } from 'react-router-dom';
 import { cx, pct } from '../lib/format';
 import { prefetchOn } from '../lib/pages';
 import { LANDING } from './config';
-import { HeroStage } from './HeroStage';
+import { HeroStage, useCanAnimate } from './HeroStage';
 import './landing.css';
 import { useLiveQueue, type LiveQueue } from './useLiveQueue';
 
 const C = LANDING.colors;
-const FOCUS = 'outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FFC21A]';
 
 const ENTRIES: { to: string; label: string; hint: string; icon: LucideIcon; primary?: boolean }[] = [
   { to: '/kiosk', label: 'Take a token', hint: 'Pick a service and get an honest wait promise.', icon: Ticket, primary: true },
@@ -29,7 +28,7 @@ const LEGEND: [string, string][] = [['Normal token', C.ink], ['Priority', C.prio
 function EntryButton({ to, label, icon: Icon, primary, size = 'md' }: (typeof ENTRIES)[number] & { size?: 'md' | 'lg' }) {
   return (
     <Link to={to} {...prefetchOn(to)}
-      className={cx('inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-colors', FOCUS,
+      className={cx('inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-colors',
         size === 'lg' ? 'h-14 px-6 text-base' : 'h-12 px-5 text-sm',
         primary ? 'bg-[#1F6FEB] text-white shadow-lg shadow-[#1F6FEB]/30 hover:bg-[#3a82f5]' : 'bg-white/8 text-[#EEF4FD] ring-1 ring-white/20 hover:bg-white/14')}>
       <Icon className="size-4.5 shrink-0" aria-hidden="true" />{label}
@@ -37,8 +36,11 @@ function EntryButton({ to, label, icon: Icon, primary, size = 'md' }: (typeof EN
   );
 }
 
-function ModePill({ q }: { q: LiveQueue }) {
-  const [label, color] = q.live ? ['Scene driven by the live queue', C.teal] : q.loading ? ['Connecting to the queue…', '#8B97AD'] : ['Demo animation', '#8B97AD'];
+/** Says honestly what the hero shows: the live queue or a demo, animated or a still image. */
+function ModePill({ q, animate }: { q: LiveQueue; animate: boolean }) {
+  const [label, color] = q.loading ? ['Connecting to the queue…', '#8B97AD']
+    : q.live ? [animate ? 'Scene driven by the live queue' : 'Live queue connected · still image', C.teal]
+    : [animate ? 'Demo animation' : 'Illustration', '#8B97AD'];
   return (
     <span className="inline-flex items-center gap-2 rounded-full bg-white/8 px-3 py-1 text-xs font-medium text-[#EEF4FD]/85 ring-1 ring-white/15">
       <span className={cx('size-2 rounded-full', q.live && 'lp-pulse')} style={{ background: color }} aria-hidden="true" />{label}
@@ -46,19 +48,19 @@ function ModePill({ q }: { q: LiveQueue }) {
   );
 }
 
-function Hero({ q }: { q: LiveQueue }) {
+function Hero({ q, animate }: { q: LiveQueue; animate: boolean }) {
   return (
     <section className="lp-space relative isolate flex min-h-[100svh] flex-col overflow-hidden lg:min-h-[min(100svh,920px)]" aria-labelledby="lp-title">
       <header className="relative z-10 mx-auto flex w-full max-w-7xl items-center gap-3 px-4 py-4 sm:px-6">
-        <Link to="/" className={cx('flex items-center gap-2 rounded-lg font-bold tracking-tight text-white', FOCUS)}>
+        <Link to="/" className={cx('flex items-center gap-2 rounded-lg font-bold tracking-tight text-white')}>
           <span className="grid size-8 place-items-center rounded-lg bg-[#1F6FEB]"><Zap className="size-4.5" aria-hidden="true" /></span>
           <span className="lp-display text-lg">Promptly</span>
         </Link>
         <nav className="ml-auto flex items-center gap-1" aria-label="Main">
           {ENTRIES.slice(1).map(({ to, label }) => (
-            <Link key={to} to={to} {...prefetchOn(to)} className={cx('hidden rounded-lg px-3 py-2 text-sm font-medium text-[#EEF4FD]/75 hover:text-white md:inline-block', FOCUS)}>{label}</Link>
+            <Link key={to} to={to} {...prefetchOn(to)} className={cx('hidden rounded-lg px-3 py-2 text-sm font-medium text-[#EEF4FD]/75 hover:text-white md:inline-block')}>{label}</Link>
           ))}
-          <Link to="/kiosk" {...prefetchOn('/kiosk')} className={cx('ml-1 rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-[#071A3D] hover:bg-[#EEF4FD]', FOCUS)}>Take a token</Link>
+          <Link to="/kiosk" {...prefetchOn('/kiosk')} className={cx('ml-1 rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-[#071A3D] hover:bg-[#EEF4FD]')}>Take a token</Link>
         </nav>
       </header>
 
@@ -66,7 +68,7 @@ function Hero({ q }: { q: LiveQueue }) {
       <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 z-0 hidden w-[56%] bg-[linear-gradient(90deg,rgba(4,15,36,0.94)_0%,rgba(4,15,36,0.75)_60%,rgba(4,15,36,0)_100%)] lg:block" />
 
       <div className="relative z-10 mx-auto w-full max-w-7xl px-4 pt-10 pb-6 sm:px-6 lg:pt-24">
-        <ModePill q={q} />
+        <ModePill q={q} animate={animate} />
         <h1 id="lp-title" className="lp-display mt-5 max-w-[14ch] text-[clamp(2.5rem,6.2vw,4.9rem)] leading-[1.02] font-extrabold tracking-tight text-white">
           Every token, an honest promise.
         </h1>
@@ -86,7 +88,7 @@ function Hero({ q }: { q: LiveQueue }) {
       {/* Queue Flow: behind the copy on desktop, its own band below the copy on small screens */}
       {/* edge fade so the canvas melts into the hero background (top edge on phones, left edge on desktop) */}
       <div className="relative h-[340px] w-full [mask-image:linear-gradient(to_bottom,transparent,black_18%)] sm:h-[420px] lg:absolute lg:inset-y-0 lg:right-0 lg:left-[42%] lg:z-[-1] lg:h-auto lg:w-auto lg:[mask-image:linear-gradient(to_right,transparent,black_14%)]" aria-hidden="true">
-        <HeroStage q={q} />
+        <HeroStage q={q} animate={animate} />
       </div>
       <p className="sr-only">
         Illustration: tokens travel as glowing dots from a kiosk on the left to five counters, C1 to C5, on the right.
@@ -165,7 +167,7 @@ function Entries() {
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {ENTRIES.map(({ to, label, hint, icon: Icon, primary }) => (
           <Link key={to} to={to} {...prefetchOn(to)}
-            className={cx('group flex flex-col gap-4 rounded-2xl p-6 ring-1 transition-colors', FOCUS,
+            className={cx('group flex flex-col gap-4 rounded-2xl p-6 ring-1 transition-colors',
               primary ? 'bg-[#1F6FEB] text-white ring-[#1F6FEB] hover:bg-[#3a82f5]' : 'bg-white/[0.04] text-white ring-white/10 hover:bg-white/[0.08]')}>
             <Icon className="size-7" aria-hidden="true" />
             <span>
@@ -182,10 +184,11 @@ function Entries() {
 /** Public landing page at "/": the Queue Flow hero, how it works, live numbers and the ways into the app. */
 export default function Landing() {
   const q = useLiveQueue();
+  const animate = useCanAnimate();
   return (
     <MotionConfig reducedMotion="user">
-      <div className="min-h-screen bg-[#040F24] text-[#EEF4FD]">
-        <Hero q={q} />
+      <div className="lp-root min-h-screen bg-[#040F24] text-[#EEF4FD]">
+        <Hero q={q} animate={animate} />
         <main>
           <HowItWorks />
           <LiveNow q={q} />

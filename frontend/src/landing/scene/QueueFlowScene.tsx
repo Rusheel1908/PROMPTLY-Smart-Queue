@@ -1,5 +1,6 @@
+import { PerformanceMonitor } from '@react-three/drei';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { CanvasTexture, Color, Fog, MathUtils, PerspectiveCamera, SRGBColorSpace } from 'three';
 import { LANDING } from '../config';
 import type { LiveQueue } from '../useLiveQueue';
@@ -68,13 +69,45 @@ function CameraRig() {
   return null;
 }
 
-function Flow({ q, mobile }: { q: LiveQueue; mobile: boolean }) {
+/**
+ * False while the tab is hidden or the hero is scrolled out of view. It drives <Canvas frameloop> directly:
+ * calling setFrameloop() inside the canvas would be undone whenever the Canvas re-renders (live data, quality drop).
+ */
+function useOnScreen(ref: RefObject<HTMLElement>) {
+  const [on, setOn] = useState(true);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let visible = !document.hidden;
+    let inView = true;
+    const apply = () => setOn(visible && inView);
+    const onVisibility = () => { visible = !document.hidden; apply(); };
+    const io = new IntersectionObserver(([e]) => { inView = e.isIntersecting; apply(); });
+    io.observe(el);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => { io.disconnect(); document.removeEventListener('visibilitychange', onVisibility); };
+  }, [ref]);
+  return on;
+}
+
+/** Low-FPS mode: pixel ratio 1 (bloom and particle halving are handled by the parent). Tagged on the canvas for debugging. */
+function Quality({ low }: { low: boolean }) {
+  const { gl, setDpr } = useThree();
+  useEffect(() => {
+    gl.domElement.dataset.quality = low ? 'low' : 'high';
+    if (low) setDpr(1);
+  }, [gl, low, setDpr]);
+  return null;
+}
+
+function Flow({ q, mobile, low }: { q: LiveQueue; mobile: boolean; low: boolean }) {
   const lanes = useMemo(buildLanes, []);
   const loops = useMemo(() => buildMissLoops(lanes), [lanes]);
   const gates = useMemo(() => new GateField(LANDING.gates.length), []);
   const cycle = useMemo(() => new GateCycle(), []);
-  const cap = mobile ? P.mobile : P.desktop;
-  const target = useRef(cap * 0.85);
+  const cap = mobile ? P.mobile : P.desktop; // buffer size never changes, so dropping quality doesn't reset the flow
+  const limit = low ? Math.min(cap, P.lowFps) : cap;
+  const target = useRef(limit * 0.85);
   const mix = useRef<SpawnMix>({ ...LANDING.mix });
   const tint = useRef<(() => Color) | null>(null);
   const live = useRef(false);
@@ -85,18 +118,18 @@ function Flow({ q, mobile }: { q: LiveQueue; mobile: boolean }) {
   useEffect(() => {
     live.current = q.live && q.gates.length > 0;
     if (!live.current) {
-      target.current = cap * 0.85;
+      target.current = limit * 0.85;
       mix.current = { ...LANDING.mix };
       tint.current = null;
       gates.target.fill(true);
       return;
     }
     LANDING.gates.forEach((_, i) => { gates.target[i] = q.gates[i]?.open ?? false; });
-    target.current = MathUtils.clamp(P.liveMin + q.waiting * P.perWaiting, P.liveMin, cap);
+    target.current = MathUtils.clamp(P.liveMin + q.waiting * P.perWaiting, Math.min(P.liveMin, limit), limit);
     mix.current = { priority: LANDING.mix.priority, missed: q.missed ? MathUtils.clamp(q.missed / Math.max(q.waiting, 1), 0.04, 0.25) : 0 };
     const colors = q.waitingServices.map((s) => new Color(q.serviceColors[s] ?? C.ink));
     tint.current = colors.length ? () => colors[Math.floor(Math.random() * colors.length)] : () => NORMAL[Math.random() < 0.7 ? 0 : 1];
-  }, [q, cap, gates]);
+  }, [q, limit, gates]);
 
   useFrame((_, delta) => {
     const dt = Math.min(delta, 1 / 20);
@@ -116,19 +149,28 @@ function Flow({ q, mobile }: { q: LiveQueue; mobile: boolean }) {
 /** "Queue Flow": tokens travel from the kiosk to five counter gates, driven by the live queue when it is reachable. */
 export default function QueueFlowScene({ q }: { q: LiveQueue }) {
   const mobile = typeof window !== 'undefined' && window.innerWidth < LANDING.mobileBreakpoint;
+  // once the frame rate drops, stay in low mode (halved particles, no bloom, dpr 1) rather than flip-flopping
+  const [low, setLow] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  const onScreen = useOnScreen(wrap);
   return (
-    <Canvas
-      dpr={[1, LANDING.render.maxDpr]}
-      camera={{ fov: CAM.fov, position: CAM.position, near: 0.1, far: 60 }}
-      gl={{ antialias: mobile, powerPreference: 'high-performance' }} // desktop: the bloom composer does MSAA instead
-      style={{ position: 'absolute', inset: 0 }}
-    >
-      <Backdrop />
-      <ambientLight intensity={0.5} />
-      <pointLight position={[-5, 2, 4]} intensity={30} color={C.kiosk} />
-      <CameraRig />
-      <Flow q={q} mobile={mobile} />
-      {!mobile && <Effects />}
-    </Canvas>
+    <div ref={wrap} style={{ position: 'absolute', inset: 0 }}>
+      <Canvas
+        frameloop={onScreen ? 'always' : 'never'}
+        dpr={[1, LANDING.render.maxDpr]}
+        camera={{ fov: CAM.fov, position: CAM.position, near: 0.1, far: 60 }}
+        gl={{ antialias: mobile, powerPreference: 'high-performance' }} // desktop: the bloom composer does MSAA instead
+        style={{ position: 'absolute', inset: 0 }}
+      >
+        <PerformanceMonitor onDecline={() => setLow(true)} onFallback={() => setLow(true)} flipflops={3} />
+        <Quality low={low} />
+        <Backdrop />
+        <ambientLight intensity={0.5} />
+        <pointLight position={[-5, 2, 4]} intensity={30} color={C.kiosk} />
+        <CameraRig />
+        <Flow q={q} mobile={mobile} low={low} />
+        {!mobile && !low && <Effects />}
+      </Canvas>
+    </div>
   );
 }
