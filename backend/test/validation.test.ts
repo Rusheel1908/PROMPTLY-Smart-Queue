@@ -64,6 +64,18 @@ describe('counters', () => {
     await counter(app, world.counter.id, 'redirect', {}).expect(400);
   });
 
+  it('skills naming an unknown service → 404, skills unchanged', async () => {
+    await staff(app).patch(`/api/counters/${world.counter.id}`, { skills: [world.loans.id, 'no-such-service'] })
+      .expect(404, { error: 'Unknown service' });
+    expect(await prisma.counterSkill.count({ where: { counterId: world.counter.id } })).toBe(2);
+  });
+
+  it('a service listed twice in skills is stored once', async () => {
+    await staff(app).patch(`/api/counters/${world.counter.id}`, { skills: [world.loans.id, world.loans.id] }).expect(200);
+    const skills = await prisma.counterSkill.findMany({ where: { counterId: world.counter.id } });
+    expect(skills.map((s) => s.serviceId)).toEqual([world.loans.id]);
+  });
+
   it('redirect to an unknown service → 404', async () => {
     await issue(app, world.deposits.id);
     await counter(app, world.counter.id, 'call-next').expect(200);

@@ -260,12 +260,14 @@ export const redirect = (counterId: string, serviceId: string, actor: string) =>
 
 export const updateCounter = (id: string, change: { status?: CounterStatus; skills?: string[] }, actor: string) => serial(async () => {
   const counter = await getCounter(id);
+  const skills = change.skills && [...new Set(change.skills)];
+  skills && must(await prisma.service.count({ where: { id: { in: skills } } }) === skills.length, 404, 'Unknown service');
   await prisma.$transaction([
     prisma.counter.update({ where: { id }, data: { status: change.status ?? counter.status } }),
-    ...(change.skills
+    ...(skills
       ? [
         prisma.counterSkill.deleteMany({ where: { counterId: id } }),
-        prisma.counterSkill.createMany({ data: change.skills.map((serviceId) => ({ counterId: id, serviceId })) }),
+        prisma.counterSkill.createMany({ data: skills.map((serviceId) => ({ counterId: id, serviceId })) }),
       ]
       : []),
     // a counter that is no longer open hands back the customer it was calling, original deadline intact
