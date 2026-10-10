@@ -39,6 +39,13 @@ describe('Reset demo', () => {
     expect(await prisma.token.count()).toBe(0);
   });
 
+  it('forgets learned service times, so every demo forecasts from the same priors', async () => {
+    await prisma.service.update({ where: { id: world.deposits.id }, data: { obsN: 19, obsMean: 1.4, obsM2: 2.5 } });
+    await staff(app).post('/api/demo/reset').expect(200);
+    const learned = await prisma.service.findMany({ where: { OR: [{ obsN: { not: 0 } }, { obsMean: { not: 0 } }, { obsM2: { not: 0 } }] } });
+    expect(learned).toEqual([]);
+  });
+
   it('leaves counters outside the demo dataset alone', async () => {
     await addCounter('Counter 9', [world.loans.id]);
     await staff(app).post('/api/demo/reset').expect(200);

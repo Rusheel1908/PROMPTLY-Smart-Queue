@@ -343,6 +343,8 @@ export const resetDemo = (actor: string) => serial(async () => {
     await tx.event.deleteMany();
     await tx.counter.updateMany({ data: { status: 'OPEN' } });
     await restoreDemoDataset(tx); // skills changed during a demo (e.g. an applied suggestion) go back to the seeded layout
+    // demos must be repeatable, so forget learned service times; supervisor-only demo action, a real branch never runs it
+    await tx.service.updateMany({ data: { obsN: 0, obsMean: 0, obsM2: 0 } });
   });
   await logEvent('DEMO_RESET', { actor });
   await replan('Demo reset');
