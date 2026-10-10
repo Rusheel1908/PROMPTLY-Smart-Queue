@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertTriangle, ArrowRight, Check, Clock, ExternalLink, Lock, Ticket, Users } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CalendarCheck, Check, Clock, ExternalLink, Lock, Ticket, Users } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { LoginForm, useStaff } from '../components/StaffGate';
 import { Button, Card, Modal, Skeleton, useAction } from '../components/ui';
@@ -9,10 +9,12 @@ import { api } from '../lib/api';
 import { CLASS_META, cx, fmtClock, fmtMin, serviceIcon, statusLink } from '../lib/format';
 import { useSnapshot } from '../lib/live';
 import { prefetchOn } from '../lib/pages';
-import type { PublicSnapshot, Service, Token, TokenClass } from '../lib/types';
+import type { CheckInResult, PublicSnapshot, Service, Token, TokenClass } from '../lib/types';
 
-type Issued = Token & { serviceName: string; secret: string };
-const CLASSES: TokenClass[] = ['NORMAL', 'APPOINTMENT', 'PRIORITY', 'EMERGENCY'];
+/** `note`: shown on the ticket, e.g. a booking that checked in after its window. */
+type Issued = Token & { serviceName: string; secret: string; note?: string };
+/** APPOINTMENT is not offered: that class comes only from checking in a booking (its window decides). */
+const CLASSES: TokenClass[] = ['NORMAL', 'PRIORITY', 'EMERGENCY'];
 const TICKET_SECONDS = 25;
 
 export default function Kiosk() {
@@ -74,6 +76,7 @@ export default function Kiosk() {
                 return (
                   <motion.button key={c} whileTap={{ scale: 0.95 }} onClick={() => chooseClass(c)}
                     className={cx('relative flex items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold ring-1 transition-all',
+                      c === 'NORMAL' && 'col-span-2',
                       cls === c ? 'bg-navy text-white ring-navy' : 'bg-white ring-line hover:ring-brand/50')}>
                     <meta.icon className="size-4 shrink-0" />
                     {meta.label}
@@ -89,6 +92,7 @@ export default function Kiosk() {
             Get my token
           </Button>
         </Card>
+        <BookingCheckIn onTicket={setTicket} />
       </aside>
 
       <Modal open={!!pinPrompt} onClose={() => setPinPrompt(null)} title="Staff verification">
@@ -140,6 +144,34 @@ function ServiceCard({ s, selected, onSelect, index }: { s: Service; selected: b
   );
 }
 
+/** "I have a booking": the booking code checks the customer in. Too early → the server's "Check-in opens at …". */
+function BookingCheckIn({ onTicket }: { onTicket: (t: Issued) => void }) {
+  const [code, setCode] = useState(() => new URLSearchParams(location.search).get('booking') ?? ''); // /kiosk?booking=BK-… pre-fills it
+  const { run, busy } = useAction();
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    const r = await run('check-in', () => api<CheckInResult>('/appointments/check-in', { json: { code } }));
+    if (!r) return;
+    setCode('');
+    const late = r.appointment.status === 'LATE_DOWNGRADED';
+    onTicket({ ...r.token, note: late ? 'Arrived after your check-in window, so you join the normal queue.' : undefined });
+  };
+  return (
+    <Card className="mt-4 flex flex-col gap-3">
+      <div className="flex items-center gap-2 font-semibold"><CalendarCheck className="size-4 text-brand" /> I have a booking</div>
+      <form onSubmit={submit} className="flex gap-2">
+        <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="BK-XXXXXX" aria-label="Booking code"
+          autoComplete="off" spellCheck={false} maxLength={20}
+          className="h-10 min-w-0 flex-1 rounded-xl bg-white px-3 font-mono text-sm tracking-wider ring-1 ring-line focus:ring-2 focus:ring-brand focus:outline-none" />
+        <Button type="submit" disabled={code.trim().length < 6} loading={busy === 'check-in'}>Check in</Button>
+      </form>
+      <p className="text-xs text-muted">
+        No booking? <Link to="/book" className="font-semibold text-brand hover:underline" {...prefetchOn('/book')}>Book a time</Link> for later today or tomorrow.
+      </p>
+    </Card>
+  );
+}
+
 function TicketOverlay({ t, onClose }: { t: Issued; onClose: () => void }) {
   const link = statusLink(t.id, t.secret);
   const url = `${location.origin}${link}`;
@@ -162,6 +194,7 @@ function TicketOverlay({ t, onClose }: { t: Issued; onClose: () => void }) {
           <div className="mt-2 flex items-center justify-center gap-2 text-sm text-white/80">
             {t.serviceName} · <meta.icon className="size-4" /> {meta.label}
           </div>
+          {t.note && <div className="mt-3 rounded-lg bg-white/10 px-3 py-2 text-sm text-amber-200">{t.note}</div>}
         </div>
         <div className="relative -mt-4 flex justify-between px-0">
           <span className="size-8 -translate-x-1/2 rounded-full bg-navy/60" />

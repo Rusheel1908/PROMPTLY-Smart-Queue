@@ -77,7 +77,11 @@ export interface AppointmentDetail extends AppointmentView {
   token: { id: string; code: string; key: string; state: TokenState } | null;
   notifications: TokenNotification[];
 }
-export interface SlotList { serviceId: string; serviceName: string; slotMin: number; capacity: number; slots: { start: string; left: number }[] }
+export interface SlotList {
+  serviceId: string; serviceName: string; slotMin: number; capacity: number;
+  checkIn: { opensBeforeMin: number; closesAfterMin: number };
+  slots: { start: string; left: number }[];
+}
 /** POST /api/appointments/check-in and /:id/check-in */
 export interface CheckInResult { appointment: AppointmentView; token: Token & { serviceName: string; secret: string } }
 /** GET /api/ops/appointments */

@@ -4,6 +4,8 @@ import { lazy } from 'react';
 const LOADERS = {
   '/': () => import('../landing/Landing'),
   '/kiosk': () => import('../pages/Kiosk'),
+  '/book': () => import('../pages/Book'),
+  '/appointment': () => import('../pages/Appointment'),
   '/counter': () => import('../pages/Counter'),
   '/board': () => import('../pages/Board'),
   '/status': () => import('../pages/Status'),
@@ -16,6 +18,8 @@ type PagePath = keyof typeof LOADERS;
 export const Pages = {
   Landing: lazy(LOADERS['/']),
   Kiosk: lazy(LOADERS['/kiosk']),
+  Book: lazy(LOADERS['/book']),
+  Appointment: lazy(LOADERS['/appointment']),
   Counter: lazy(LOADERS['/counter']),
   Board: lazy(LOADERS['/board']),
   Status: lazy(LOADERS['/status']),
@@ -23,9 +27,12 @@ export const Pages = {
   Lab: lazy(LOADERS['/lab']),
 };
 
+/** Pages with an id in the path ("/status/:id") share one loader. */
+const WITH_ID = ['/status', '/appointment'] as const;
+
 /** Start downloading a page's chunk ahead of navigation (nav hover/focus). The browser caches the import, so the later lazy() render is instant. */
 export function prefetchPage(path: string) {
-  const key = (path.startsWith('/status') ? '/status' : path) as PagePath;
+  const key = (WITH_ID.find((p) => path.startsWith(`${p}/`)) ?? path) as PagePath;
   LOADERS[key]?.().catch(() => undefined); // a failed prefetch just means lazy() fetches it again on navigation
 }
 

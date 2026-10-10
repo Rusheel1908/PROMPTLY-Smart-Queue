@@ -1,9 +1,9 @@
 import {
-  AlertTriangle, Ban, CalendarCheck, CheckCircle2, CircleDot, CreditCard, HeartPulse, HelpCircle,
+  AlertTriangle, Ban, CalendarCheck, CalendarClock, CalendarX, CheckCircle2, CircleDot, Clock, CreditCard, HeartPulse, HelpCircle,
   Hourglass, Landmark, LogOut, Megaphone, PhoneMissed, Shuffle, Siren, UserRound, Wallet, XCircle,
   type LucideIcon,
 } from 'lucide-react';
-import type { CounterStatus, TokenClass, TokenState } from './types';
+import type { AppointmentStatus, CounterStatus, TokenClass, TokenState } from './types';
 
 export const SERVICE_ICON: Record<string, LucideIcon> = {
   wallet: Wallet, landmark: Landmark, help: HelpCircle, card: CreditCard,
@@ -25,6 +25,14 @@ export const STATE_META: Record<TokenState, { label: string; icon: LucideIcon; c
   MISSED: { label: 'Missed turn', icon: PhoneMissed, chip: 'bg-orange-50 text-orange-700 ring-orange-200' },
   NO_SHOW: { label: 'No-show', icon: Ban, chip: 'bg-red-50 text-red-700 ring-red-200' },
   REDIRECTED: { label: 'Redirected', icon: Shuffle, chip: 'bg-violet-50 text-violet-700 ring-violet-200' },
+  CANCELLED: { label: 'Cancelled', icon: XCircle, chip: 'bg-slate-100 text-slate-600 ring-slate-200' },
+};
+
+export const APPOINTMENT_META: Record<AppointmentStatus, { label: string; icon: LucideIcon; chip: string }> = {
+  BOOKED: { label: 'Booked', icon: CalendarClock, chip: 'bg-blue-50 text-blue-700 ring-blue-200' },
+  CHECKED_IN: { label: 'Checked in', icon: CalendarCheck, chip: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
+  LATE_DOWNGRADED: { label: 'Late: normal queue', icon: Clock, chip: 'bg-orange-50 text-orange-700 ring-orange-200' },
+  NO_SHOW: { label: 'Missed', icon: CalendarX, chip: 'bg-red-50 text-red-700 ring-red-200' },
   CANCELLED: { label: 'Cancelled', icon: XCircle, chip: 'bg-slate-100 text-slate-600 ring-slate-200' },
 };
 
@@ -52,6 +60,10 @@ export const EVENT_TEXT: Record<string, (e: { code: string | null; counter: stri
   REACTIVATED: (e) => `${e.code} reactivated`,
   DEMO_RESET: () => 'Demo reset',
   SUGGESTION_APPLIED: (e) => `Suggestion applied: ${e.payload?.explanation ?? ''}`,
+  APPOINTMENT_BOOKED: (e) => `Appointment booked for ${fmtClock(e.payload?.slotStart)}`,
+  APPOINTMENT_CHECKED_IN: (e) => `${e.code} checked in for an appointment${e.payload?.phase === 'LATE' ? ' (late → normal queue)' : ''}`,
+  APPOINTMENT_NO_SHOW: () => 'A booked customer did not arrive',
+  APPOINTMENT_CANCELLED: () => 'An appointment was cancelled',
 };
 export const describeEvent = (e: { type: string; code: string | null; counter: string | null; payload: any }) =>
   (EVENT_TEXT[e.type] ?? (() => e.type))(e);
@@ -70,6 +82,17 @@ export const fmtAgo = (d: string | number, now = Date.now()) => {
 export const fmtDuration = (ms: number) => {
   const s = Math.max(0, Math.floor(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+
+/** "4:05" under an hour, "2 h 05 min" beyond. */
+export const fmtCountdown = (ms: number) =>
+  ms < 3_600_000 ? fmtDuration(ms) : `${Math.floor(ms / 3_600_000)} h ${String(Math.floor(ms / 60_000) % 60).padStart(2, '0')} min`;
+
+/** "Today", "Tomorrow", or a weekday (bookings are for today and tomorrow). */
+export const fmtDay = (d: string | number | Date, now = Date.now()) => {
+  const midnight = (x: string | number | Date) => new Date(x).setHours(0, 0, 0, 0);
+  const days = Math.round((midnight(d) - midnight(now)) / 86_400_000); // rounded, so a DST day still counts as one
+  return days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : new Date(d).toLocaleDateString([], { weekday: 'long' });
 };
 
 export const pct = (x: number | null | undefined) => (x == null ? '—' : `${Math.round(x * 100)}%`);

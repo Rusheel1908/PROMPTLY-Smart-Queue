@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { FlaskConical, LayoutDashboard, MonitorPlay, Ticket, UserRoundCheck, Zap } from 'lucide-react';
+import { CalendarPlus, FlaskConical, LayoutDashboard, MonitorPlay, Ticket, UserRoundCheck, Zap } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { cx } from '../lib/format';
@@ -10,6 +10,7 @@ import { LiveDot } from './ui';
 
 const LINKS = [
   { to: '/kiosk', label: 'Kiosk', icon: Ticket },
+  { to: '/book', label: 'Book', icon: CalendarPlus },
   { to: '/counter', label: 'Counter', icon: UserRoundCheck },
   { to: '/board', label: 'Board', icon: MonitorPlay },
   { to: '/ops', label: 'Ops', icon: LayoutDashboard },

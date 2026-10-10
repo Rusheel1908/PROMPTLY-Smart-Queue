@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { StaffStats } from '../components/StaffStats';
 import { SuggestedActions } from '../components/SuggestedActions';
+import { TodaysAppointments } from '../components/TodaysAppointments';
 import { Button, Card, Modal, Stat, useAction } from '../components/ui';
 import { api } from '../lib/api';
 import { CLASS_META, COUNTER_META, cx, describeEvent, fmtAgo, fmtMin, pct, serviceIcon } from '../lib/format';
@@ -69,6 +70,8 @@ export default function Ops() {
 
       <StaffStats version={snap?.events[0]?.seq} />
 
+      <TodaysAppointments version={snap?.events[0]?.seq} />
+
       <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
         {snap && <RiskHeatmap snap={snap} />}
         {snap && <WaitsByClass waits={snap.metrics.waitByClass} />}
@@ -93,7 +96,10 @@ export default function Ops() {
       </Card>
 
       <Modal open={confirmReset} onClose={() => setConfirmReset(false)} title="Reset demo data?">
-        <p className="text-ink-2">Clears all tokens and the event log and reopens every counter. Learned service times are kept.</p>
+        <p className="text-ink-2">
+          Clears all tokens, bookings and the event log, reopens every counter with its usual services, forgets learned service times,
+          and books one demo appointment.
+        </p>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="ghost" onClick={() => setConfirmReset(false)}>Cancel</Button>
           <Button variant="danger" loading={busy === 'reset'} onClick={reset}>Reset</Button>

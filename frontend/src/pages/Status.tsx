@@ -1,18 +1,19 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  AlertTriangle, ArrowRight, Bell, BellRing, CalendarClock, CheckCircle2, Clock, Coffee, History, Megaphone, PartyPopper, PhoneMissed,
-  Shuffle, TrendingDown, TrendingUp, Volume2, VolumeX, X, XCircle, type LucideIcon,
+  AlertTriangle, ArrowRight, Bell, CalendarClock, CheckCircle2, Coffee, History, Megaphone, PartyPopper, PhoneMissed,
+  Shuffle, TrendingDown, TrendingUp, Volume2, VolumeX, XCircle,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { AlertBanner, useNotificationBanner } from '../components/AlertBanner';
 import { EtaBand } from '../components/EtaBand';
 import { NotifyMe } from '../components/NotifyMe';
 import { Button, Card, Chip, Empty, Modal, Skeleton, useAction } from '../components/ui';
-import { alertUser, unlockAudioOnFirstTap, useMuted } from '../lib/alerts';
+import { unlockAudioOnFirstTap, useMuted } from '../lib/alerts';
 import { api } from '../lib/api';
 import { CLASS_META, cx, fmtAgo, fmtClock, fmtMin, STATE_META, statusLink } from '../lib/format';
 import { useAnnouncements, useNow, useSocket, useThrottled } from '../lib/live';
-import type { NotifyEvent, TokenDetail, TokenNotification, TokenState } from '../lib/types';
+import type { TokenDetail, TokenState } from '../lib/types';
 
 /** The ticket's access key travels as ?k= in the QR link and is sent on every call for this token. */
 const tokenApi = (id: string, key: string) => <T,>(path = '', json?: unknown, method?: string) =>
@@ -77,77 +78,6 @@ export default function Status() {
 }
 
 /* ---------- in-page alerts ---------- */
-
-/** Older notifications are shown on open only if this recent; anything older is history, not news. */
-const FRESH_ON_OPEN_MS = 15 * 60_000;
-
-/**
- * The banner shows the newest notification. Ones already there when the page opened appear quietly;
- * ones that arrive while it is open also beep and vibrate (unless muted).
- */
-function useNotificationBanner(t: TokenDetail | null, muted: boolean) {
-  const seen = useRef<{ tokenId: string; ids: Set<number> } | null>(null);
-  const [shown, setShown] = useState<TokenNotification | null>(null);
-  const [live, setLive] = useState(false);
-  const mutedRef = useRef(muted);
-  mutedRef.current = muted;
-
-  useEffect(() => {
-    if (!t) return;
-    const list = t.notifications ?? [];
-    if (seen.current?.tokenId !== t.id) { // first load of this token: nothing is new yet
-      seen.current = { tokenId: t.id, ids: new Set(list.map((n) => n.id)) };
-      const latest = list[0];
-      setShown(latest && Date.now() - new Date(latest.ts).getTime() < FRESH_ON_OPEN_MS ? latest : null);
-      setLive(false);
-      return;
-    }
-    const fresh = list.filter((n) => !seen.current!.ids.has(n.id));
-    if (fresh.length === 0) return;
-    fresh.forEach((n) => seen.current!.ids.add(n.id));
-    setShown(fresh[0]);
-    setLive(true);
-    mutedRef.current || alertUser(fresh[0].urgency);
-  }, [t]);
-
-  return { shown, live, dismiss: () => setShown(null) };
-}
-
-const EVENT_META: Record<NotifyEvent, { icon: LucideIcon; tone: string }> = {
-  NEXT_UP: { icon: BellRing, tone: 'bg-blue-50 text-blue-900 ring-blue-200' },
-  CALLED: { icon: Megaphone, tone: 'bg-amber-50 text-amber-900 ring-amber-300' },
-  RECALLED: { icon: Megaphone, tone: 'bg-orange-50 text-orange-900 ring-orange-300' },
-  MISSED: { icon: PhoneMissed, tone: 'bg-orange-50 text-orange-900 ring-orange-300' },
-  NO_SHOW: { icon: XCircle, tone: 'bg-red-50 text-red-900 ring-red-200' },
-  BIG_DELAY: { icon: Clock, tone: 'bg-slate-50 text-slate-900 ring-slate-200' },
-  APPT_LATE: { icon: Clock, tone: 'bg-orange-50 text-orange-900 ring-orange-300' },
-  APPT_REMINDER: { icon: BellRing, tone: 'bg-blue-50 text-blue-900 ring-blue-200' },
-  APPT_MISSED: { icon: PhoneMissed, tone: 'bg-orange-50 text-orange-900 ring-orange-300' },
-  APPT_CANCELLED: { icon: XCircle, tone: 'bg-red-50 text-red-900 ring-red-200' },
-};
-
-function AlertBanner({ n, live, onClose }: { n: TokenNotification | null; live: boolean; onClose: () => void }) {
-  const meta = n && (EVENT_META[n.event] ?? EVENT_META.NEXT_UP);
-  return (
-    <AnimatePresence>
-      {n && meta && (
-        <motion.div key={n.id} role="status" aria-live="assertive"
-          initial={{ opacity: 0, y: -12, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: live ? [1, 1.02, 1] : 1 }} exit={{ opacity: 0, y: -8 }}
-          className={cx('flex items-start gap-3 rounded-2xl p-4 ring-1', meta.tone, live && n.urgency === 'high' && 'ring-2')}>
-          <meta.icon className={cx('mt-0.5 size-5 shrink-0', live && 'animate-bounce')} />
-          <div className="min-w-0 flex-1">
-            <div className="font-semibold">{n.title}</div>
-            <div className="text-sm opacity-90">{n.body}</div>
-            <div className="mt-1 text-xs opacity-60">{fmtClock(n.ts)}</div>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Dismiss" className="-m-1 rounded-lg p-1 opacity-60 hover:opacity-100">
-            <X className="size-4" />
-          </button>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-}
 
 /** Nothing more will happen to these tokens, so there is nothing to alert about. */
 const FINISHED: TokenState[] = ['DONE', 'CANCELLED', 'NO_SHOW', 'REDIRECTED'];
@@ -293,7 +223,8 @@ function Waiting({ t, now, reload, call }: PanelProps) {
 const Big = ({ label, value, hint, tone = 'text-ink' }: { label: string; value: string; hint: string; tone?: string }) => (
   <div>
     <div className="text-sm text-muted">{label}</div>
-    <motion.div key={value} initial={{ scale: 1.15, color: '#1f6feb' }} animate={{ scale: 1, color: '' }} className={cx('tabular text-3xl font-bold', tone)}>{value}</motion.div>
+    {/* a new value pops in; the color stays the tone class (animating to "" warns: not an animatable value) */}
+    <motion.div key={value} initial={{ scale: 1.15, opacity: 0.4 }} animate={{ scale: 1, opacity: 1 }} className={cx('tabular text-3xl font-bold', tone)}>{value}</motion.div>
     <div className="text-xs text-muted">{hint}</div>
   </div>
 );

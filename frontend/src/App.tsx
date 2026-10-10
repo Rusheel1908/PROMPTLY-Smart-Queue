@@ -7,7 +7,7 @@ import { StaffGate, StaffProvider } from './components/StaffGate';
 import { PageLoader, ToastProvider } from './components/ui';
 import { Pages } from './lib/pages';
 
-const { Board, Counter, Kiosk, Lab, Landing, Ops, Status } = Pages;
+const { Appointment, Board, Book, Counter, Kiosk, Lab, Landing, Ops, Status } = Pages;
 
 export default function App() {
   return (
@@ -26,6 +26,8 @@ export default function App() {
                 <Suspense fallback={<PageLoader />}>
                   <Routes>
                     <Route path="/kiosk" element={<Kiosk />} />
+                    <Route path="/book" element={<Book />} />
+                    <Route path="/appointment/:id" element={<Appointment />} />
                     <Route path="/counter" element={<StaffGate title="Counter console"><Counter /></StaffGate>} />
                     <Route path="/board" element={<Board />} />
                     <Route path="/status/:id" element={<Status />} />
