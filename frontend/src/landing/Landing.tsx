@@ -84,7 +84,8 @@ function Hero({ q }: { q: LiveQueue }) {
       </div>
 
       {/* Queue Flow: behind the copy on desktop, its own band below the copy on small screens */}
-      <div className="relative h-[340px] w-full sm:h-[420px] lg:absolute lg:inset-y-0 lg:right-0 lg:left-[42%] lg:z-[-1] lg:h-auto lg:w-auto" aria-hidden="true">
+      {/* edge fade so the canvas melts into the hero background (top edge on phones, left edge on desktop) */}
+      <div className="relative h-[340px] w-full [mask-image:linear-gradient(to_bottom,transparent,black_18%)] sm:h-[420px] lg:absolute lg:inset-y-0 lg:right-0 lg:left-[42%] lg:z-[-1] lg:h-auto lg:w-auto lg:[mask-image:linear-gradient(to_right,transparent,black_14%)]" aria-hidden="true">
         <HeroStage q={q} />
       </div>
       <p className="sr-only">

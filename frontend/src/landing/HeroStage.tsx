@@ -18,7 +18,7 @@ export function HeroStage({ q }: { q: LiveQueue }) {
   return (
     <SceneBoundary fallback={still}>
       <Suspense fallback={still}>
-        <QueueFlowScene />
+        <QueueFlowScene q={q} />
       </Suspense>
     </SceneBoundary>
   );
