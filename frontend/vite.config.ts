@@ -9,7 +9,9 @@ export default defineConfig({
       output: {
         // React + router change rarely, so they get one long-cached vendor chunk; everything else is split automatically per page.
         manualChunks(id) {
-          if (/[\\/]node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom|@remix-run[\\/]router)[\\/]/.test(id)) return 'vendor';
+          // top-level packages only: nested copies (e.g. the older scheduler inside @react-three/fiber) stay with the page that uses them
+          const topLevel = id.split(/[\\/]node_modules[\\/]/).length === 2;
+          if (topLevel && /[\\/]node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom|@remix-run[\\/]router)[\\/]/.test(id)) return 'vendor';
           // Recharts alone is ~380 kB; its lodash/d3 internals go in their own chunk (still only loaded by Ops and Lab) so no chunk passes ~300 kB.
           if (/[\\/]node_modules[\\/](lodash|victory-vendor|d3-[^\\/]+|internmap)[\\/]/.test(id)) return 'charts-deps';
         },
