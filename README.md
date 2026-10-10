@@ -8,6 +8,8 @@ wait ceiling (no starvation). Every token's call time is **forecast by replaying
 **explained** on the customer's status page.
 
 ## Run locally
+On Windows, `.\start-demo.ps1` does all of this in one command; see [DEMO.md](DEMO.md) for the demo script and staff logins.
+
 1. PostgreSQL (Docker):
    `docker run -d --name promptly-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=promptly -p 5432:5432 postgres:16`
 2. Backend
@@ -81,7 +83,10 @@ the same, the next call picks the same customer, and called customers are still 
 ## Screens
 | Route | Who | What |
 |---|---|---|
-| `/` | Customer | Kiosk: live wait band per service, staff-verified priority, ticket with QR |
+| `/` | Everyone | Landing page with the live 3D Queue Flow |
+| `/kiosk` | Customer | Kiosk: live wait band per service, staff-verified priority, ticket with QR; "I have a booking" check-in by code |
+| `/book` | Customer | Book a slot (today or tomorrow, no personal data): booking code and QR of the private booking link |
+| `/appointment/:id?k=…` | Customer | Booking countdown, check-in window, Check in (on time: appointment token; late: normal queue), reminder |
 | `/status/:id?k=…` | Customer | ETA band, promise, people ahead, "why my time changed", step away / cancel, your-turn alert |
 | `/counter` | Staff | Call next with "why this customer", call-window ring, recall / missed / redirect, keyboard shortcuts |
 | `/board` | Display | Now calling with chime + voice, counters, up next |
@@ -94,7 +99,7 @@ backend/src/engine/   pure TS: dispatcher (policies + fast path), forecaster, du
 backend/src/sim/      synthetic workload + discrete-event evaluator (baselines, ablations), Lab worker entry, saved snapshot
 backend/src/services/ queue (load/replan/snapshot), actions (all mutations, serialized), sweeper (auto recall/miss), lab jobs (worker threads)
 backend/src/routes/   auth (login, sessions), tokens (public, rate-limited), counters (staff), ops (snapshot, what-if, staff stats, demo, lab)
-frontend/src/pages/   Kiosk, Status, Counter, Board, Ops, Lab
+frontend/src/pages/   Kiosk, Book, Appointment, Status, Counter, Board, Ops, Lab
 ```
 
 All evaluation data is synthetic. Results are hypotheses until measured in a real branch.

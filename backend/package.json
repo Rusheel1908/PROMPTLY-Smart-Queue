@@ -19,7 +19,8 @@
     "db:setup": "prisma db push && tsx prisma/seed.ts --production",
     "db:studio": "prisma studio",
     "lab:snapshot": "tsx src/sim/snapshot.ts",
-    "push:keys": "node scripts/vapid-keys.mjs"
+    "push:keys": "node scripts/vapid-keys.mjs",
+    "demo:smoke": "node scripts/demo-smoke.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
