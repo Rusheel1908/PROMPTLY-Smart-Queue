@@ -61,3 +61,16 @@ describe('public broadcasts', () => {
     expect(raw).not.toContain('tokenId');
   });
 });
+
+describe('websocket origin check', () => {
+  const connect = (origin: string) => new Promise<number>((resolve) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${(server.address() as AddressInfo).port}/ws`, { origin });
+    ws.on('open', () => { ws.close(); resolve(101); });
+    ws.on('unexpected-response', (_req, res) => resolve(res.statusCode ?? 0));
+  });
+
+  it('accepts a configured origin and rejects any other with 403', async () => {
+    expect(await connect('http://localhost:5173')).toBe(101);
+    expect(await connect('https://evil.example')).toBe(403);
+  });
+});

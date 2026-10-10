@@ -28,6 +28,7 @@ const WORKER_ENTRY = new URL(`../sim/labWorker.${EXT}`, import.meta.url);
 
 const jobs = new Map<string, LabJob>();
 let active: string | null = null;
+let activeWorker: Worker | null = null;
 
 const now = () => new Date().toISOString();
 const terminal = (j: LabJob) => j.status === 'done' || j.status === 'failed';
@@ -51,6 +52,7 @@ export function startLabJob(params: EvalOptions, { timeoutMs = LAB_TIMEOUT_MS } 
     clearTimeout(timer);
     Object.assign(job, patch, { finishedAt: now() });
     active = null;
+    activeWorker = null;
     prune();
     broadcast('lab', { jobId: job.id, status: job.status });
   };
@@ -70,5 +72,9 @@ export function startLabJob(params: EvalOptions, { timeoutMs = LAB_TIMEOUT_MS } 
   worker.on('message', (m: LabWorkerMessage) => (ON_MESSAGE[m.type] as (m: LabWorkerMessage) => void)(m));
   worker.on('error', (e) => finish({ status: 'failed', error: e.message }));
   worker.on('exit', () => finish({ status: 'failed', error: 'Lab worker exited unexpectedly' }));
+  activeWorker = worker;
   return job;
 }
+
+/** Graceful shutdown: kill a running lab worker (its job ends as failed via the exit handler). */
+export const stopLabJobs = async () => { await activeWorker?.terminate(); };

@@ -26,10 +26,14 @@ async function sweepCalls() {
   for (const t of expired) await ON_EXPIRY[Math.min(t.recallCount, 1)](t);
 }
 
-/** Background loops: call-window enforcement every 5 s, re-forecast every 30 s as time passes. */
+/** Background loops: call-window enforcement every 5 s, re-forecast every 30 s as time passes. Returns a stop function. */
 export function startSweeper() {
   const safely = (fn: () => Promise<unknown>) => () => { serial(fn).catch((e) => console.error('[sweeper]', e)); };
-  setInterval(safely(sweepCalls), 5_000);
-  setInterval(safely(() => replan('Services running longer or shorter than expected', undefined, 3 * MIN)), 30_000);
+  const timers = [
+    setInterval(safely(sweepCalls), 5_000),
+    setInterval(safely(() => replan('Services running longer or shorter than expected', undefined, 3 * MIN)), 30_000),
+  ];
   safely(() => replan('Server started'))();
+  /** Stop the loops, then wait for work already queued so it does not outlive the database connection. */
+  return () => { timers.forEach(clearInterval); return serial(async () => undefined); };
 }

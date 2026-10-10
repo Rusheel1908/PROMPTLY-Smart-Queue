@@ -28,6 +28,8 @@ wait ceiling (no starvation). Every token's call time is **forecast by replaying
    ```
 
 Staff screens (Counter, Ops) and priority classes at the kiosk need the staff PIN: `STAFF_PIN` in `backend/.env` (default `1234`).
+With `NODE_ENV=production` the server refuses to start unless `STAFF_PIN` is set, at least 6 characters and not `1234`;
+every variable is documented in `backend/.env.example`.
 
 **Token privacy.** Each token has a random secret, returned once when it is issued and embedded in the ticket QR as
 `/status/:id?k=<secret>`. Viewing, stepping away from or cancelling a token needs that key (`x-token-key` header) or the

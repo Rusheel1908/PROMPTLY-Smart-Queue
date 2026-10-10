@@ -1,4 +1,5 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
+import { config, RATE_LIMITS } from '../config.js';
 import { safeEqual } from './secret.js';
 
 export class HttpError extends Error {
@@ -19,18 +20,10 @@ export function must(cond: unknown, status: number, message: string): void {
 export const handle = (fn: (req: Request, res: Response) => Promise<unknown>, status = 200): RequestHandler =>
   (req, res, next) => { fn(req, res).then((data) => res.status(status).json(data)).catch(next); };
 
-const STAFF_PIN = () => process.env.STAFF_PIN ?? '1234';
-
-export const isStaff = (req: Request) => safeEqual(req.header('x-staff-pin'), STAFF_PIN());
-
-/** Staff-only routes: a shared PIN stands in for a role-scoped session in this MVP. */
-export const requireStaff: RequestHandler = (req, _res, next) => {
-  must(isStaff(req), 401, 'Staff PIN required');
-  next();
-};
+export const isStaff = (req: Request) => safeEqual(req.header('x-staff-pin'), config.STAFF_PIN);
 
 /** Tiny in-memory fixed-window rate limiter for public routes. */
-export function rateLimit(max: number, windowMs: number): RequestHandler {
+export function rateLimit({ max, windowMs }: { max: number; windowMs: number }): RequestHandler {
   const hits = new Map<string, number[]>();
   return (req: Request, _res: Response, next: NextFunction) => {
     const now = Date.now();
@@ -41,3 +34,10 @@ export function rateLimit(max: number, windowMs: number): RequestHandler {
     next();
   };
 }
+
+/** Only wrong-PIN attempts count, so staff working normally never hit the limit. */
+const pinGuesses = rateLimit(RATE_LIMITS.staffAuth);
+
+/** Staff-only routes: a shared PIN stands in for a role-scoped session in this MVP. */
+export const requireStaff: RequestHandler = (req, res, next) =>
+  isStaff(req) ? next() : pinGuesses(req, res, () => fail(401, 'Staff PIN required'));
