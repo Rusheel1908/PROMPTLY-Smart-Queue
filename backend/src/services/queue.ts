@@ -5,6 +5,7 @@ import { meanMinutes, posterior } from '../engine/duration.js';
 import { Band, forecast, quote } from '../engine/forecast.js';
 import { atRisk, etaShifts, SHIFT_THRESHOLD_MS } from '../engine/ledger.js';
 import { EngineState, EngineToken, MIN } from '../engine/types.js';
+import * as clock from '../lib/clock.js';
 import { prisma } from '../lib/db.js';
 import { broadcast } from '../realtime.js';
 
@@ -31,10 +32,10 @@ export async function logEvent(
 
 /* ---------- world → engine ---------- */
 
-const startOfDay = () => new Date(new Date().setHours(0, 0, 0, 0));
+const startOfDay = () => new Date(new Date(clock.now()).setHours(0, 0, 0, 0));
 
 export async function loadWorld() {
-  const at = Date.now();
+  const at = clock.now();
   const [services, counters, active, issued, firstToday] = await Promise.all([
     prisma.service.findMany({ orderBy: { prefix: 'asc' } }),
     prisma.counter.findMany({ include: { skills: true }, orderBy: { name: 'asc' } }),
@@ -102,7 +103,7 @@ const toQuote = (b: Band | null, now: number) => b && { p50Min: (b.p50 - now) / 
  * the threshold get an EtaChange row carrying the cause, shown on their status page.
  */
 export async function replan(reason: string, causeEvent?: number, thresholdMs = SHIFT_THRESHOLD_MS) {
-  const now = Date.now();
+  const now = clock.now();
   const w = await loadWorld();
   const s = toEngine(w);
   const bands = forecast(s, now, { runs: FORECAST_RUNS });
@@ -169,7 +170,7 @@ export async function metrics() {
 
 /** Everything the screens need in one payload. Pushed via WebSocket "queue" pings, pulled here. */
 export async function snapshot() {
-  const now = Date.now();
+  const now = clock.now();
   const w = await loadWorld();
   const s = toEngine(w);
   const capable = capableCounts(s);

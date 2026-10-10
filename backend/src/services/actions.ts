@@ -7,6 +7,7 @@ import { toPromise } from '../engine/ledger.js';
 import {
   CLASS_FACTOR, MAX_REDIRECTS, MIN, MISS_GRACE_MS, PROMISE_MIN_LEAD_MS, REENTRY_FACTOR,
 } from '../engine/types.js';
+import * as clock from '../lib/clock.js';
 import { prisma } from '../lib/db.js';
 import { fail, must } from '../lib/http.js';
 import { newTokenSecret, safeEqual } from '../lib/secret.js';
@@ -46,11 +47,13 @@ const guard = (t: Token, action: Action) =>
 export const issueToken = (serviceId: string, cls: TokenClass, actor = 'kiosk') => serial(async () => {
   const service = (await prisma.service.findUnique({ where: { id: serviceId } })) ?? fail(404, 'Unknown service');
   const count = await prisma.token.count({ where: { serviceId } });
-  const now = Date.now();
+  const now = clock.now();
   const token = await prisma.token.create({
     data: {
       code: `${service.prefix}-${String(count + 1).padStart(3, '0')}`,
       serviceId, class: cls, secret: newTokenSecret(),
+      // same clock as the deadline (not the database default), so arrival credit and deadline agree
+      arrivedAt: new Date(now), creditedArrival: new Date(now), notBefore: new Date(now),
       deadline: new Date(now + service.targetWaitS * 1000 * CLASS_FACTOR[cls]),
     },
   });
@@ -73,7 +76,7 @@ export async function holdsToken(id: string, key: string | undefined) {
 }
 
 export async function tokenDetail(id: string) {
-  const now = Date.now();
+  const now = clock.now();
   const token = (await prisma.token.findUnique({
     where: { id },
     include: { service: true, counter: true, etaChanges: { orderBy: { ts: 'desc' }, take: 20 } },
@@ -98,7 +101,7 @@ export async function tokenDetail(id: string) {
 export const stepAway = (id: string, minutes: number) => serial(async () => {
   const t = await getToken(id);
   guard(t, 'away');
-  const until = Math.max(t.notBefore.getTime(), Date.now() + minutes * MIN);
+  const until = Math.max(t.notBefore.getTime(), clock.now() + minutes * MIN);
   await prisma.token.update({ where: { id }, data: { notBefore: new Date(until) } });
   const seq = await logEvent('STEPPED_AWAY', { tokenId: id, payload: { minutes } });
   await replan('A customer ahead stepped away', seq);
@@ -117,7 +120,7 @@ export const cancelToken = (id: string) => serial(async () => {
 export const reactivate = (id: string, actor: string) => serial(async () => {
   const t = await getToken(id);
   guard(t, 'reactivate');
-  const now = Date.now();
+  const now = clock.now();
   await prisma.token.update({
     where: { id },
     data: {
@@ -142,7 +145,7 @@ export const callNext = (counterId: string, actor: string) => serial(async () =>
   const busy = await prisma.token.findFirst({ where: { counterId, state: { in: ['CALLED', 'SERVING'] } } });
   must(!busy, 409, `${counter.name} already has ${busy?.code} at the desk`);
 
-  const now = Date.now();
+  const now = clock.now();
   const s = toEngine(await loadWorld());
   const pick = pickNext(s, counterId, now);
   return pick ? claim(pick.id, explainPick(s, pick, now), counter, now, actor) : nothingToCall(counterId, actor);
@@ -174,7 +177,7 @@ export const recall = (counterId: string, actor: string) => serial(async () => {
   const t = await atCounter(counterId);
   guard(t, 'recall');
   const counter = await getCounter(counterId);
-  await prisma.token.update({ where: { id: t.id }, data: { recallCount: { increment: 1 }, lastCallAt: new Date() } });
+  await prisma.token.update({ where: { id: t.id }, data: { recallCount: { increment: 1 }, lastCallAt: new Date(clock.now()) } });
   await logEvent('RECALLED', { tokenId: t.id, counterId, actor });
   announce(t, counter.name, true);
   broadcast('queue', { reason: 'recall' });
@@ -184,7 +187,7 @@ export const recall = (counterId: string, actor: string) => serial(async () => {
 export const startService = (counterId: string, actor: string) => serial(async () => {
   const t = await atCounter(counterId);
   guard(t, 'ack');
-  await prisma.token.update({ where: { id: t.id }, data: { state: 'SERVING', servedAt: new Date() } });
+  await prisma.token.update({ where: { id: t.id }, data: { state: 'SERVING', servedAt: new Date(clock.now()) } });
   const seq = await logEvent('SERVING', { tokenId: t.id, counterId, actor });
   await replan('Queue progress', seq);
   return { ok: true };
@@ -193,7 +196,7 @@ export const startService = (counterId: string, actor: string) => serial(async (
 export const complete = (counterId: string, actor: string) => serial(async () => {
   const t = await atCounter(counterId);
   guard(t, 'complete');
-  const now = Date.now();
+  const now = clock.now();
   const minutes = (now - (t.servedAt ?? t.calledAt ?? new Date(now)).getTime()) / MIN;
   const stats = observe(
     { priorMu: t.service.priorMu, priorSigma: t.service.priorSigma, n: t.service.obsN, mean: t.service.obsMean, m2: t.service.obsM2 },
@@ -212,7 +215,7 @@ export const complete = (counterId: string, actor: string) => serial(async () =>
 /** Missed turn: re-enter after a grace delay with a short deadline (not the back), or NO_SHOW on the last miss. */
 export async function missToken(t: Token & { service: { targetWaitS: number } }, actor: string) {
   guard(t, 'miss');
-  const now = Date.now();
+  const now = clock.now();
   const next = afterMiss(t.missCount);
   const reentry = now + MISS_GRACE_MS;
   await prisma.token.update({
@@ -238,12 +241,12 @@ export const redirect = (counterId: string, serviceId: string, actor: string) =>
   const target = (await prisma.service.findUnique({ where: { id: serviceId } })) ?? fail(404, 'Unknown service');
   const count = await prisma.token.count({ where: { serviceId } });
   const [, child] = await prisma.$transaction([
-    prisma.token.update({ where: { id: t.id }, data: { state: 'REDIRECTED', doneAt: new Date() } }),
+    prisma.token.update({ where: { id: t.id }, data: { state: 'REDIRECTED', doneAt: new Date(clock.now()) } }),
     prisma.token.create({
       data: {
         code: `${target.prefix}-${String(count + 1).padStart(3, '0')}`,
         serviceId, class: t.class, parentTokenId: t.id, redirectDepth: t.redirectDepth + 1, secret: newTokenSecret(),
-        arrivedAt: t.arrivedAt,
+        arrivedAt: t.arrivedAt, notBefore: new Date(clock.now()),
         creditedArrival: t.creditedArrival, // not penalized for the system's routing
         deadline: new Date(t.creditedArrival.getTime() + target.targetWaitS * 1000 * CLASS_FACTOR[t.class]),
         promiseP90: t.promiseP90,
@@ -283,7 +286,7 @@ export const updateCounter = (id: string, change: { status?: CounterStatus; skil
 
 /** Projected impact of counter changes, compared on the same random seed. Nothing is committed. */
 export async function whatIf(overrides: CounterOverride[]) {
-  const now = Date.now();
+  const now = clock.now();
   const w = await loadWorld();
   const before = forecast(toEngine(w), now, { runs: FORECAST_RUNS });
   const after = forecast(toEngine(w, overrides), now, { runs: FORECAST_RUNS });

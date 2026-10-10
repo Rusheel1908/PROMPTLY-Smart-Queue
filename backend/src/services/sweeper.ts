@@ -1,5 +1,6 @@
 import type { Token } from '@prisma/client';
 import { CALL_WINDOW_MS, MIN } from '../engine/types.js';
+import * as clock from '../lib/clock.js';
 import { prisma } from '../lib/db.js';
 import { broadcast } from '../realtime.js';
 import { announce, missToken } from './actions.js';
@@ -10,7 +11,7 @@ type Called = Token & { service: { targetWaitS: number }; counter: { name: strin
 /** First expiry of the call window → one automatic recall; second → missed turn. */
 const ON_EXPIRY: ((t: Called) => Promise<unknown>)[] = [
   async (t) => {
-    await prisma.token.update({ where: { id: t.id }, data: { recallCount: { increment: 1 }, lastCallAt: new Date() } });
+    await prisma.token.update({ where: { id: t.id }, data: { recallCount: { increment: 1 }, lastCallAt: new Date(clock.now()) } });
     await logEvent('RECALLED', { tokenId: t.id, counterId: t.counterId ?? undefined, actor: 'system' });
     announce(t, t.counter?.name ?? '', true);
     broadcast('queue', { reason: 'auto-recall' });
@@ -18,9 +19,10 @@ const ON_EXPIRY: ((t: Called) => Promise<unknown>)[] = [
   (t) => missToken(t, 'system'),
 ];
 
-async function sweepCalls() {
+/** One pass over called tokens whose window expired. Exported so tests can run it after moving the clock. */
+export async function sweepCalls() {
   const expired = await prisma.token.findMany({
-    where: { state: 'CALLED', lastCallAt: { lt: new Date(Date.now() - CALL_WINDOW_MS) } },
+    where: { state: 'CALLED', lastCallAt: { lt: new Date(clock.now() - CALL_WINDOW_MS) } },
     include: { service: { select: { targetWaitS: true } }, counter: { select: { name: true } } },
   });
   for (const t of expired) await ON_EXPIRY[Math.min(t.recallCount, 1)](t);
