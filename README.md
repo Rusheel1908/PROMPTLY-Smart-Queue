@@ -16,7 +16,7 @@ wait ceiling (no starvation). Every token's call time is **forecast by replaying
    cp .env.example .env
    npm install
    npx prisma db push      # creates tables from prisma/schema.prisma
-   npm run db:seed         # demo branch: 4 services, 5 counters (labeled demo data)
+   npm run db:seed         # demo branch: 4 services, 5 counters, 3 staff accounts (prints their dev PINs once)
    npm run dev             # http://localhost:4000/api/health
    npm test                # engine tests + API tests (API tests use a separate promptly_test DB, created automatically)
    npm run lab:snapshot    # optional: regenerate src/sim/precomputed.json (the Lab's saved 30-day result, ~15 s)
@@ -29,13 +29,30 @@ wait ceiling (no starvation). Every token's call time is **forecast by replaying
    npm run dev             # http://localhost:5173
    ```
 
-Staff screens (Counter, Ops) and priority classes at the kiosk need the staff PIN: `STAFF_PIN` in `backend/.env` (default `1234`).
-With `NODE_ENV=production` the server refuses to start unless `STAFF_PIN` is set, at least 6 characters and not `1234`;
-every variable is documented in `backend/.env.example`.
+Every variable is documented in `backend/.env.example`.
+
+**Staff accounts.** Each staff member logs in with their own name and PIN. Every action they take is logged with their
+staff id, so calls, completes and misses can be audited per person. The seed creates three demo accounts:
+
+| Name | Role | Can |
+|---|---|---|
+| Asha | Supervisor | everything below, plus open / pause / close counters and change skills, apply suggestions, what-if, reactivate no-shows, live Lab runs, demo tools, Ops and the staff miss audit |
+| Ravi, Meera | Staff | call next, recall, start, complete, miss, redirect, issue priority tokens at the kiosk |
+
+The table lives in one place, `backend/src/lib/permissions.ts`; routes name an action and the frontend greys out what
+the logged-in role cannot do. In dev, `npm run db:seed` gives each new account a random 6-digit PIN and prints it once;
+`npm run db:seed -- --reset-pins` issues new ones. In production the seed never generates or prints PINs: pass them as
+`SEED_STAFF_PINS='{"Asha":"…","Ravi":"…","Meera":"…"}'` (at least 6 characters each). PINs are stored as salted scrypt
+hashes. A login opens a 12-hour session (only its hash is stored; the browser keeps the token in sessionStorage, so
+closing the tab logs out). Five wrong PINs lock an account for 5 minutes, and failed logins are rate-limited per IP.
+
+> Upgrading from the shared `STAFF_PIN`: run `npx prisma db push` (adds the `Staff` and `Session` tables; nothing else
+> changes) and `npm run db:seed`, then remove `STAFF_PIN` from `backend/.env`. Old events keep the actor `staff` and
+> show as "Staff (shared PIN)".
 
 **Token privacy.** Each token has a random secret, returned once when it is issued and embedded in the ticket QR as
-`/status/:id?k=<secret>`. Viewing, stepping away from or cancelling a token needs that key (`x-token-key` header) or the
-staff PIN; anything else gets a 404. Without the PIN, `/api/snapshot` and the WebSocket carry only what the board shows
+`/status/:id?k=<secret>`. Viewing, stepping away from or cancelling a token needs that key (`x-token-key` header) or a
+staff session; anything else gets a 404. Without a session, `/api/snapshot` and the WebSocket carry only what the board shows
 (codes, services, states, counters, ETAs), with no token ids.
 
 > Upgrading an existing dev database: the new `Token.secret` column is required, so clear the demo tokens first.
@@ -68,15 +85,15 @@ the same, the next call picks the same customer, and called customers are still 
 | `/status/:id?k=…` | Customer | ETA band, promise, people ahead, "why my time changed", step away / cancel, your-turn alert |
 | `/counter` | Staff | Call next with "why this customer", call-window ring, recall / missed / redirect, keyboard shortcuts |
 | `/board` | Display | Now calling with chime + voice, counters, up next |
-| `/ops` | Supervisor | Suggested actions (the system simulates counter changes and proposes the best, one click to apply), KPIs, promise-risk heatmap, what-if planner (simulate, then apply), live event log, demo tools |
-| `/lab` | Anyone (view) / Staff (run live) | Simulation lab: B1, B2, Fairline + 4 ablations on identical synthetic days. Opens on a saved pre-computed result; live runs execute in a worker thread, one at a time, 60 s limit |
+| `/ops` | Supervisor | Staff miss audit (per-person calls, completes, misses; high miss rates flagged), suggested actions (the system simulates counter changes and proposes the best, one click to apply), KPIs, promise-risk heatmap, what-if planner (simulate, then apply), live event log, demo tools |
+| `/lab` | Anyone (view) / Supervisor (run live) | Simulation lab: B1, B2, Fairline + 4 ablations on identical synthetic days. Opens on a saved pre-computed result; live runs execute in a worker thread, one at a time, 60 s limit |
 
 ## Layout
 ```
 backend/src/engine/   pure TS: dispatcher (policies + fast path), forecaster, duration model, state machine, ledger
 backend/src/sim/      synthetic workload + discrete-event evaluator (baselines, ablations), Lab worker entry, saved snapshot
 backend/src/services/ queue (load/replan/snapshot), actions (all mutations, serialized), sweeper (auto recall/miss), lab jobs (worker threads)
-backend/src/routes/   tokens (public, rate-limited), counters (staff), ops (snapshot, what-if, demo, lab)
+backend/src/routes/   auth (login, sessions), tokens (public, rate-limited), counters (staff), ops (snapshot, what-if, staff stats, demo, lab)
 frontend/src/pages/   Kiosk, Status, Counter, Board, Ops, Lab
 ```
 
