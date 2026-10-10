@@ -1,4 +1,5 @@
-const BASE = import.meta.env.VITE_API_URL ?? '';
+/** The backend origin in production (e.g. https://promptly-api.onrender.com); empty in dev, where Vite proxies /api and /ws. */
+const BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '');
 const SESSION_KEY = 'promptly.session';
 
 /** The staff session token, per browser tab (sessionStorage), so closing the tab logs out. */

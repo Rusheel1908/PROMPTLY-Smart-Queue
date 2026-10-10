@@ -1,0 +1,23 @@
+# Render Blueprint for the Promptly API (HTTP + WebSockets on one port). Steps and env vars: DEPLOY.md.
+services:
+  - type: web
+    name: promptly-api
+    runtime: node
+    plan: free # spins down after 15 min idle; use starter or above so the sweeper and live screens keep running
+    region: singapore # keep it in the same region as the Neon database
+    rootDir: backend
+    # --include=dev: NODE_ENV=production below would make npm skip devDependencies, and the build needs prisma and tsc
+    buildCommand: npm ci --include=dev && npx prisma generate && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1" # one proxy hop, so rate limits see the client IP; never "true"
+      - key: DATABASE_URL
+        sync: false # Neon connection string (direct, not -pooler), with sslmode=require
+      - key: CORS_ORIGIN
+        sync: false # the Vercel URL, e.g. https://promptly.vercel.app (comma-separate several)
+    # PORT is set by Render. Staff PINs (SEED_STAFF_PINS) are not set here: seeding runs once from a laptop (npm run db:setup).

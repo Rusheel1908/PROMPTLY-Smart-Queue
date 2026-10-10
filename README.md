@@ -29,7 +29,7 @@ wait ceiling (no starvation). Every token's call time is **forecast by replaying
    npm run dev             # http://localhost:5173
    ```
 
-Every variable is documented in `backend/.env.example`.
+Every variable is documented in `backend/.env.example`. To deploy (Neon, Render, Vercel), see [DEPLOY.md](DEPLOY.md).
 
 **Staff accounts.** Each staff member logs in with their own name and PIN. Every action they take is logged with their
 staff id, so calls, completes and misses can be audited per person. The seed creates three demo accounts:
