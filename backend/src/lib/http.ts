@@ -33,17 +33,20 @@ export const handle = (fn: (req: Request, res: Response) => Promise<unknown>, st
 type Limit = { max: number; windowMs: number };
 const TOO_MANY = 'Too many requests, please slow down';
 
-/** Per-IP hit log for a fixed window. */
-function hitLog({ windowMs }: Limit) {
+type Bucket = (req: Request) => string;
+const byIp: Bucket = (req) => req.ip ?? 'unknown';
+
+/** Hit log for a fixed window, one entry per bucket (the client IP unless given). */
+function hitLog({ windowMs }: Limit, bucket: Bucket = byIp) {
   const hits = new Map<string, number[]>();
-  const recent = (req: Request) => (hits.get(req.ip ?? 'unknown') ?? []).filter((t) => Date.now() - t < windowMs);
-  const add = (req: Request) => hits.set(req.ip ?? 'unknown', [...recent(req), Date.now()]);
+  const recent = (req: Request) => (hits.get(bucket(req)) ?? []).filter((t) => Date.now() - t < windowMs);
+  const add = (req: Request) => hits.set(bucket(req), [...recent(req), Date.now()]);
   return { recent, add };
 }
 
-/** Tiny in-memory fixed-window rate limiter for public routes. */
-export function rateLimit(limit: Limit): RequestHandler {
-  const log = hitLog(limit);
+/** Tiny in-memory fixed-window rate limiter for public routes, per IP unless another bucket is given. */
+export function rateLimit(limit: Limit, bucket?: Bucket): RequestHandler {
+  const log = hitLog(limit, bucket);
   return (req: Request, _res: Response, next: NextFunction) => {
     const seen = log.recent(req).length;
     log.add(req);

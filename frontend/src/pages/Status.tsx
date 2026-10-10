@@ -9,7 +9,7 @@ import { EtaBand } from '../components/EtaBand';
 import { Button, Card, Chip, Empty, Modal, Skeleton, useAction } from '../components/ui';
 import { api } from '../lib/api';
 import { CLASS_META, cx, fmtAgo, fmtClock, fmtMin, STATE_META, statusLink } from '../lib/format';
-import { useAnnouncements, useNow, useSocket } from '../lib/live';
+import { useAnnouncements, useNow, useSocket, useThrottled } from '../lib/live';
 import type { TokenDetail, TokenState } from '../lib/types';
 
 /** The ticket's access key travels as ?k= in the QR link and is sent on every call for this token. */
@@ -28,7 +28,8 @@ export default function Status() {
   // a wrong or missing key gets the same 404 as an unknown token
   const load = useCallback(() => call<TokenDetail>().then(setT).catch(() => setMissing(true)), [call]);
   useEffect(() => { setT(null); setMissing(false); load(); }, [load]);
-  useSocket((m) => { m.type === 'queue' && load(); });
+  const onPing = useThrottled(load);
+  useSocket((m) => { m.type === 'queue' && onPing(); });
   useAnnouncements((a) => {
     const mine = !!t && a.code === t.code;
     mine && setYourTurn(true);

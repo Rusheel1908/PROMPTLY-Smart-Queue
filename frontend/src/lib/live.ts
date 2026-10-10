@@ -28,6 +28,28 @@ export function useSocket(listener: Listener) {
   }, []);
 }
 
+/** Socket pings come in bursts (one per queue change); refetch at most once per this many ms. */
+const REFETCH_GAP_MS = 2000;
+
+/**
+ * Throttle a socket-triggered refetch: run now if the last run was over `ms` ago, otherwise once at the end of the
+ * window, however many pings arrive meanwhile. Keeps open pages (one per customer phone) from hammering the API.
+ */
+export function useThrottled(fn: () => void, ms = REFETCH_GAP_MS) {
+  const ref = useRef(fn);
+  ref.current = fn;
+  const last = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(timer.current), []);
+  return useCallback(() => {
+    if (timer.current) return; // a run is already scheduled for the end of this window
+    const run = () => { timer.current = undefined; last.current = Date.now(); ref.current(); };
+    const wait = last.current + ms - Date.now();
+    if (wait <= 0) run();
+    else timer.current = setTimeout(run, wait);
+  }, [ms]);
+}
+
 export function useConnected() {
   const [c, setC] = useState(connected);
   useEffect(() => {
@@ -39,7 +61,7 @@ export function useConnected() {
 }
 
 /**
- * Live queue snapshot: fetched once, re-fetched (coalesced) on every "queue" ping.
+ * Live queue snapshot: fetched once, re-fetched on "queue" pings (at most once per 2 s, and never two at once).
  * Staff screens get the full Snapshot (the api helper sends the session token); public screens type it as PublicSnapshot.
  */
 export function useSnapshot<S extends PublicSnapshot = Snapshot>() {
@@ -64,7 +86,8 @@ export function useSnapshot<S extends PublicSnapshot = Snapshot>() {
   }
 
   useEffect(() => { refresh(); }, [refresh]);
-  useSocket((m) => { m.type === 'queue' && refresh(); });
+  const onPing = useThrottled(refresh);
+  useSocket((m) => { m.type === 'queue' && onPing(); });
   return { snap, error, refresh };
 }
 
@@ -79,7 +102,8 @@ export function useSuggestions() {
     .then((d) => { setData(d); setError(null); })
     .catch((e) => setError(e.message)), []);
   useEffect(() => { refresh(); }, [refresh]);
-  useSocket((m) => { m.type === 'suggestions-updated' && refresh(); });
+  const onPing = useThrottled(refresh);
+  useSocket((m) => { m.type === 'suggestions-updated' && onPing(); });
   return { data, error, refresh };
 }
 

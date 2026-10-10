@@ -28,7 +28,21 @@ tokensRouter.post('/', rateLimit(RATE_LIMITS.issueToken), loadStaff, handle(asyn
   return issueToken(body.serviceId, body.class, req.staff?.id ?? 'kiosk');
 }, 201));
 
-tokensRouter.get('/:id', rateLimit(RATE_LIMITS.tokenDetail), loadStaff, ownerOrStaff, handle((req) => tokenDetail(req.params.id)));
+/**
+ * Status reads (every open status page refetches on queue updates): a valid QR key is limited per token, so many
+ * phones behind one branch Wi-Fi IP never hit 429. Anything else (wrong key, staff) stays per IP, so guessing is still capped.
+ */
+const readPerKey = rateLimit(RATE_LIMITS.tokenDetailPerKey, (req) => `token:${req.params.id}`);
+const readPerIp = rateLimit(RATE_LIMITS.tokenDetail);
+const statusRead: RequestHandler = (req, res, next) => {
+  holdsToken(req.params.id, req.header('x-token-key')).then((holder) => (holder ? readPerKey : readPerIp)(req, res, (err?: unknown) => {
+    if (err) return next(err);
+    must(holder || staffMay(req, 'view-token'), 404, 'Token not found');
+    next();
+  })).catch(next);
+};
+
+tokensRouter.get('/:id', loadStaff, statusRead, handle((req) => tokenDetail(req.params.id)));
 tokensRouter.post('/:id/away', rateLimit(RATE_LIMITS.tokenAction), loadStaff, ownerOrStaff, handle((req) => stepAway(req.params.id, Away.parse(req.body ?? {}).minutes)));
 tokensRouter.post('/:id/cancel', rateLimit(RATE_LIMITS.tokenAction), loadStaff, ownerOrStaff, handle((req) => cancelToken(req.params.id)));
 tokensRouter.post('/:id/reactivate', requireRole('reactivate'), handle((req) => reactivate(req.params.id, actor(req))));

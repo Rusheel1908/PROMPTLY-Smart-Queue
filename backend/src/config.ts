@@ -7,7 +7,8 @@ const HOUR = 60 * MINUTE;
 /** Per-IP fixed-window limits for public routes: one table, so every number lives here. */
 export const RATE_LIMITS = {
   issueToken: { max: 30, windowMs: MINUTE },
-  tokenDetail: { max: 120, windowMs: MINUTE },
+  tokenDetail: { max: 120, windowMs: MINUTE }, // per IP: status reads without a valid key (guesses, staff)
+  tokenDetailPerKey: { max: 120, windowMs: MINUTE }, // per token: reads with its valid QR key, so phones sharing one Wi-Fi IP never starve each other
   tokenAction: { max: 20, windowMs: MINUTE },
   login: { max: 20, windowMs: 15 * MINUTE }, // failed staff logins per IP, so PINs cannot be brute-forced
 } as const;
