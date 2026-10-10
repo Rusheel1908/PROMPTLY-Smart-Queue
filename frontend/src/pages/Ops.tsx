@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { SuggestedActions } from '../components/SuggestedActions';
 import { Button, Card, Modal, Stat, useAction } from '../components/ui';
 import { api } from '../lib/api';
 import { CLASS_META, COUNTER_META, cx, describeEvent, fmtAgo, fmtMin, pct, serviceIcon } from '../lib/format';
@@ -41,6 +42,8 @@ export default function Ops() {
           <Button variant="ghost" icon={RotateCcw} onClick={() => setConfirmReset(true)}>Reset demo</Button>
         </div>
       </div>
+
+      <SuggestedActions onApplied={refresh} />
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
         <Stat label="Waiting" icon={Users} value={m?.waiting ?? '—'} hint={`${m?.issued ?? 0} issued today`} />

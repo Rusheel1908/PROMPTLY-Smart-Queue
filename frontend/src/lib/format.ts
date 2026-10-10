@@ -51,6 +51,7 @@ export const EVENT_TEXT: Record<string, (e: { code: string | null; counter: stri
   CANCELLED: (e) => `${e.code} cancelled`,
   REACTIVATED: (e) => `${e.code} reactivated`,
   DEMO_RESET: () => 'Demo reset',
+  SUGGESTION_APPLIED: (e) => `Suggestion applied: ${e.payload?.explanation ?? ''}`,
 };
 export const describeEvent = (e: { type: string; code: string | null; counter: string | null; payload: any }) =>
   (EVENT_TEXT[e.type] ?? (() => e.type))(e);

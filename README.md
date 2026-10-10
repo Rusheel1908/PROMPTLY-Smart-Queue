@@ -68,7 +68,7 @@ the same, the next call picks the same customer, and called customers are still 
 | `/status/:id?k=…` | Customer | ETA band, promise, people ahead, "why my time changed", step away / cancel, your-turn alert |
 | `/counter` | Staff | Call next with "why this customer", call-window ring, recall / missed / redirect, keyboard shortcuts |
 | `/board` | Display | Now calling with chime + voice, counters, up next |
-| `/ops` | Supervisor | KPIs, promise-risk heatmap, what-if planner (simulate, then apply), live event log, demo tools |
+| `/ops` | Supervisor | Suggested actions (the system simulates counter changes and proposes the best, one click to apply), KPIs, promise-risk heatmap, what-if planner (simulate, then apply), live event log, demo tools |
 | `/lab` | Anyone (view) / Staff (run live) | Simulation lab: B1, B2, Fairline + 4 ablations on identical synthetic days. Opens on a saved pre-computed result; live runs execute in a worker thread, one at a time, 60 s limit |
 
 ## Layout

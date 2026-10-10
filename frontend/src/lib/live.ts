@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, subscribe } from './api';
-import type { Announcement, PublicSnapshot, Snapshot } from './types';
+import type { Announcement, PublicSnapshot, Snapshot, Suggestions } from './types';
 
 type Listener = (msg: { type: string; data: unknown }) => void;
 
@@ -66,6 +66,21 @@ export function useSnapshot<S extends PublicSnapshot = Snapshot>() {
   useEffect(() => { refresh(); }, [refresh]);
   useSocket((m) => { m.type === 'queue' && refresh(); });
   return { snap, error, refresh };
+}
+
+/**
+ * Supervisor suggestions: fetched with the staff PIN (the api helper sends it) and re-fetched on the
+ * bare "suggestions-updated" ping. The details never travel over the public WebSocket.
+ */
+export function useSuggestions() {
+  const [data, setData] = useState<Suggestions | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const refresh = useCallback(() => api<Suggestions>('/ops/suggestions')
+    .then((d) => { setData(d); setError(null); })
+    .catch((e) => setError(e.message)), []);
+  useEffect(() => { refresh(); }, [refresh]);
+  useSocket((m) => { m.type === 'suggestions-updated' && refresh(); });
+  return { data, error, refresh };
 }
 
 export function useAnnouncements(onAnnounce: (a: Announcement) => void) {

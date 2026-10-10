@@ -77,3 +77,24 @@ export interface LabJob {
   id: string; status: 'queued' | 'running' | 'done' | 'failed';
   progress?: number; result?: LabResult; error?: string; createdAt: string; finishedAt?: string;
 }
+
+/** A supervisor suggestion from GET /api/ops/suggestions (staff only). */
+export interface Suggestion {
+  id: string;
+  score: number;
+  change: {
+    kind: 'add-skill' | 'reopen'; counterId: string; counterName: string;
+    serviceId: string | null; serviceName: string | null; patch: { status?: CounterStatus; skills?: string[] };
+  };
+  explanation: string;
+  numbers: {
+    avgMinutesSaved: number; promisesRescued: number; promisesBroken: number; newlyServable: number;
+    madeWorse: number; madeWorseMin: number;
+  };
+  bar: { serviceName: string; beforeMin: number | null; afterMin: number | null };
+}
+export interface Suggestions {
+  computedAt: string;
+  timing: { screenMs: number; rescoreMs: number; totalMs: number; candidates: number; waiting: number };
+  suggestions: Suggestion[];
+}
