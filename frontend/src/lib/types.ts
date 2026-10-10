@@ -52,7 +52,9 @@ export interface PublicSnapshot extends Omit<Snapshot, 'counters' | 'tokens' | '
 }
 
 /** Customer notification events (backend/src/notify/rules.ts). */
-export type NotifyEvent = 'NEXT_UP' | 'CALLED' | 'RECALLED' | 'MISSED' | 'NO_SHOW' | 'BIG_DELAY';
+export type NotifyEvent =
+  | 'NEXT_UP' | 'CALLED' | 'RECALLED' | 'MISSED' | 'NO_SHOW' | 'BIG_DELAY' | 'APPT_LATE'
+  | 'APPT_REMINDER' | 'APPT_MISSED' | 'APPT_CANCELLED';
 export interface TokenNotification { id: number; event: NotifyEvent; ts: string; title: string; body: string; urgency: 'normal' | 'high' }
 
 export interface TokenDetail extends Token {
@@ -60,6 +62,30 @@ export interface TokenDetail extends Token {
   changes: { ts: string; deltaS: number; reason: string }[];
   child: { id: string; code: string; key: string } | null; // key: the child's own access key
   notifications: TokenNotification[]; // newest first
+  appointment: { slotStart: string; status: AppointmentStatus; note: string | null } | null; // checked in from a booking
+}
+
+/* ---------- appointments ---------- */
+
+export type AppointmentStatus = 'BOOKED' | 'CHECKED_IN' | 'LATE_DOWNGRADED' | 'NO_SHOW' | 'CANCELLED';
+/** GET /api/appointments/:id (with the booking key); POST /api/appointments adds `secret` once. */
+export interface AppointmentView {
+  id: string; code: string; serviceId: string; serviceName: string; slotStart: string; status: AppointmentStatus;
+  opensAt: string; closesAt: string;
+}
+export interface AppointmentDetail extends AppointmentView {
+  token: { id: string; code: string; key: string; state: TokenState } | null;
+  notifications: TokenNotification[];
+}
+export interface SlotList { serviceId: string; serviceName: string; slotMin: number; capacity: number; slots: { start: string; left: number }[] }
+/** POST /api/appointments/check-in and /:id/check-in */
+export interface CheckInResult { appointment: AppointmentView; token: Token & { serviceName: string; secret: string } }
+/** GET /api/ops/appointments */
+export interface TodaysAppointments {
+  counts: Record<AppointmentStatus, number>;
+  appointments: {
+    id: string; code: string; serviceName: string; slotStart: string; status: AppointmentStatus; tokenCode: string | null; tokenState: TokenState | null;
+  }[];
 }
 
 export interface Announcement { code: string; counter: string; recall: boolean }
@@ -112,7 +138,8 @@ export interface StaffUser { id: string; name: string; role: StaffRole }
 /** Action names from the backend PERMISSIONS table (backend/src/lib/permissions.ts). */
 export type Permission =
   | 'call-next' | 'recall' | 'ack' | 'complete' | 'miss' | 'redirect' | 'issue-priority' | 'view-token' | 'reactivate'
-  | 'counter-update' | 'whatif' | 'view-suggestions' | 'apply-suggestion' | 'staff-stats' | 'lab-run' | 'demo';
+  | 'counter-update' | 'whatif' | 'view-suggestions' | 'apply-suggestion' | 'staff-stats' | 'lab-run' | 'demo'
+  | 'view-appointments' | 'cancel-appointment';
 /** GET /api/auth/me */
 export interface Me { staff: StaffUser; expiresAt: string; permissions: Permission[] }
 export interface LoginResult { token: string; staff: StaffUser; expiresAt: string }

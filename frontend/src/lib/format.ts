@@ -78,3 +78,4 @@ export const cx = (...xs: (string | false | null | undefined)[]) => xs.filter(Bo
 
 /** A customer's private tracking link: the token id plus its access key (from the ticket QR). */
 export const statusLink = (id: string, key: string) => `/status/${id}?k=${encodeURIComponent(key)}`;
+export const appointmentLink = (id: string, key: string) => `/appointment/${id}?k=${encodeURIComponent(key)}`;
