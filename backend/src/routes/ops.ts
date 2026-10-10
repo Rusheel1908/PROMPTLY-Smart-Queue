@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { fail, handle, isStaff, requireStaff } from '../lib/http.js';
+import { actor, fail, handle, loadStaff, requireRole } from '../lib/http.js';
 import { SPECS } from '../sim/evaluate.js';
 import precomputed from '../sim/precomputed.json' with { type: 'json' };
 import { getLabJob, startLabJob } from '../services/labJobs.js';
 import { resetDemo, spawnDemo, whatIf } from '../services/actions.js';
 import { applySuggestion, getSuggestions } from '../services/suggestions.js';
 import { metrics, snapshot, SNAPSHOT_VIEWS } from '../services/queue.js';
+import { staffStats } from '../services/staffStats.js';
 
 export const opsRouter = Router();
 
@@ -25,17 +26,18 @@ const Lab = z.object({
   policies: z.array(z.string()).optional(),
 });
 
-/** Read model for every screen. Without the staff PIN it is reduced to what the board shows: codes, no token ids. */
-opsRouter.get('/snapshot', handle((req) => snapshot().then(SNAPSHOT_VIEWS[isStaff(req) ? 'staff' : 'public'])));
+/** Read model for every screen. Without a staff session it is reduced to what the board shows: codes, no token ids. */
+opsRouter.get('/snapshot', loadStaff, handle((req) => snapshot().then(SNAPSHOT_VIEWS[req.staff ? 'staff' : 'public'])));
 opsRouter.get('/metrics', handle(() => metrics()));
-opsRouter.get('/auth/check', requireStaff, handle(async () => ({ ok: true })));
 
-opsRouter.post('/whatif', requireStaff, handle(async (req) => whatIf(WhatIf.parse(req.body).counters)));
-/** Supervisor suggestions: details only with the staff PIN (the WebSocket carries a bare "suggestions-updated" ping). */
-opsRouter.get('/ops/suggestions', requireStaff, handle(() => getSuggestions()));
-opsRouter.post('/ops/suggestions/:id/apply', requireStaff, handle((req) => applySuggestion(req.params.id, 'staff')));
-opsRouter.post('/demo/spawn', requireStaff, handle(async (req) => spawnDemo(Spawn.parse(req.body ?? {}).count)));
-opsRouter.post('/demo/reset', requireStaff, handle(() => resetDemo()));
+opsRouter.post('/whatif', requireRole('whatif'), handle(async (req) => whatIf(WhatIf.parse(req.body).counters)));
+/** Supervisor suggestions: details only with a session (the WebSocket carries a bare "suggestions-updated" ping). */
+opsRouter.get('/ops/suggestions', requireRole('view-suggestions'), handle(() => getSuggestions()));
+opsRouter.post('/ops/suggestions/:id/apply', requireRole('apply-suggestion'), handle((req) => applySuggestion(req.params.id, actor(req))));
+/** Miss audit: today's calls, completes and misses per staff member, with outliers flagged. */
+opsRouter.get('/ops/staff-stats', requireRole('staff-stats'), handle(() => staffStats()));
+opsRouter.post('/demo/spawn', requireRole('demo'), handle(async (req) => spawnDemo(Spawn.parse(req.body ?? {}).count)));
+opsRouter.post('/demo/reset', requireRole('demo'), handle((req) => resetDemo(actor(req))));
 
 /** Simulation Lab: every policy on identical SYNTHETIC days. */
 opsRouter.get('/lab/policies', handle(async () =>
@@ -43,5 +45,5 @@ opsRouter.get('/lab/policies', handle(async () =>
 /** The saved full evaluation (`npm run lab:snapshot`), so the page shows something instantly. */
 opsRouter.get('/lab/latest', handle(async () => precomputed));
 /** Live runs go to a worker thread (one at a time); the client polls the job or waits for a "lab" ping. */
-opsRouter.post('/lab/run', requireStaff, handle(async (req) => ({ jobId: startLabJob(Lab.parse(req.body ?? {})).id }), 202));
-opsRouter.get('/lab/jobs/:id', requireStaff, handle(async (req) => getLabJob(req.params.id) ?? fail(404, 'Lab job not found')));
+opsRouter.post('/lab/run', requireRole('lab-run'), handle(async (req) => ({ jobId: startLabJob(Lab.parse(req.body ?? {})).id }), 202));
+opsRouter.get('/lab/jobs/:id', requireRole('lab-run'), handle(async (req) => getLabJob(req.params.id) ?? fail(404, 'Lab job not found')));

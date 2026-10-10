@@ -36,7 +36,7 @@ describe('apply', () => {
     const events = await prisma.event.findMany({ where: { seq: { gt: lastSeq } }, orderBy: { seq: 'asc' } });
     expect(events.map((e) => e.type)).toEqual(['SUGGESTION_APPLIED', 'COUNTER_CHANGED']);
     expect(events[0]).toMatchObject({
-      actor: 'staff', counterId: counter2.id,
+      actor: world.staff.asha, counterId: counter2.id,
       payload: { suggestionId: top.id, explanation: top.explanation, predicted: top.numbers },
     });
     // replanned: the Loans customers have an ETA again

@@ -7,7 +7,7 @@ import { WebSocket } from 'ws';
 import { createApp } from '../src/app.js';
 import { prisma } from '../src/lib/db.js';
 import { attachRealtime } from '../src/realtime.js';
-import { issue, PIN, resetDb } from './helpers.js';
+import { issue, as, resetDb } from './helpers.js';
 
 type Msg = { type: string; data: Record<string, unknown> };
 
@@ -47,8 +47,8 @@ describe('public broadcasts', () => {
   it('announce carries the code and counter, never the token id', async () => {
     const world = await resetDb();
     const t = await issue(server, world.deposits.id);
-    await request(server).post(`/api/counters/${world.counter.id}/call-next`).set(PIN).expect(200);
-    await request(server).post(`/api/counters/${world.counter.id}/recall`).set(PIN).expect(200);
+    await request(server).post(`/api/counters/${world.counter.id}/call-next`).set(as()).expect(200);
+    await request(server).post(`/api/counters/${world.counter.id}/recall`).set(as()).expect(200);
 
     const [call, recall] = await announcements(2);
     expect(call.data).toEqual({ code: t.code, counter: 'Counter 1', recall: false });

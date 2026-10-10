@@ -4,7 +4,7 @@ import request from 'supertest';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CALL_WINDOW_MS } from '../src/engine/types.js';
 import { prisma } from '../src/lib/db.js';
-import { addCounter, PIN, resetDb } from './helpers.js';
+import { addCounter, as, resetDb } from './helpers.js';
 
 /** Queue time shared by every server instance in this file, moved by hand. */
 let t = Date.now();
@@ -60,8 +60,8 @@ afterEach(async () => { await server?.crash(); server = undefined; vi.useRealTim
 afterAll(() => prisma.$disconnect());
 
 const staff = (s: Instance) => ({
-  post: (url: string, body: object = {}) => s.api().post(url).set(PIN).send(body),
-  get: (url: string) => s.api().get(url).set(PIN),
+  post: (url: string, body: object = {}) => s.api().post(url).set(as()).send(body),
+  get: (url: string) => s.api().get(url).set(as()),
 });
 
 describe('server restart', () => {

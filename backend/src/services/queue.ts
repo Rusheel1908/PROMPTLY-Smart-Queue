@@ -39,7 +39,7 @@ export async function logEvent(
 
 /* ---------- world → engine ---------- */
 
-const startOfDay = () => new Date(new Date(clock.now()).setHours(0, 0, 0, 0));
+export const startOfDay = () => new Date(new Date(clock.now()).setHours(0, 0, 0, 0));
 
 export async function loadWorld() {
   const at = clock.now();
@@ -184,11 +184,13 @@ export async function snapshot() {
   const capable = capableCounts(s);
   const waiting = w.active.filter((t) => t.state === 'WAITING');
   const pos = positions(waiting);
-  const [recent, events, m] = await Promise.all([
+  const [recent, events, m, staff] = await Promise.all([
     prisma.token.findMany({ where: { calledAt: { not: null } }, orderBy: { calledAt: 'desc' }, take: 10 }),
     prisma.event.findMany({ orderBy: { seq: 'desc' }, take: 40 }),
     metrics(),
+    prisma.staff.findMany({ select: { id: true, name: true } }),
   ]);
+  const staffName = Object.fromEntries(staff.map((s) => [s.id, s.name]));
   const codeById = Object.fromEntries([...w.active, ...recent].map((t) => [t.id, t.code]));
   const counterName = Object.fromEntries(w.counters.map((c) => [c.id, c.name]));
 
@@ -213,10 +215,16 @@ export async function snapshot() {
     events: events.map((e) => ({
       seq: e.seq, ts: e.ts, type: e.type, payload: e.payload,
       code: codeById[e.tokenId ?? ''] ?? null, counter: counterName[e.counterId ?? ''] ?? null,
+      actor: e.actor, actorName: actorName(e.actor, staffName),
     })),
     metrics: { ...m, waiting: waiting.length, atRisk: w.active.filter((t) => publicToken(t, now, pos).atRisk).length },
   };
 }
+
+/** Non-staff actors, and 'staff' from events logged before individual accounts existed. */
+const ACTOR_LABELS: Record<string, string> = { system: 'System', kiosk: 'Kiosk', demo: 'Demo', staff: 'Staff (shared PIN)' };
+const actorName = (actor: string | null, staffName: Record<string, string>) =>
+  (actor == null ? null : staffName[actor] ?? ACTOR_LABELS[actor] ?? 'Unknown');
 
 const publicTokenOrNull = (t: Token | undefined, now: number, pos: Record<string, number>) =>
   (t ? publicToken(t, now, pos) : null);

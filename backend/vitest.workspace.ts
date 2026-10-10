@@ -10,7 +10,7 @@ export default defineWorkspace([
       name: 'api',
       include: ['test/**/*.test.ts'],
       globalSetup: ['test/globalSetup.ts'],
-      env: { DATABASE_URL: TEST_DATABASE_URL, STAFF_PIN: '1234' },
+      env: { DATABASE_URL: TEST_DATABASE_URL },
       pool: 'forks',
       poolOptions: { forks: { singleFork: true } }, // files share one database, so run them one after another
       testTimeout: 20_000,

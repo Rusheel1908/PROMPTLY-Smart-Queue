@@ -2,7 +2,7 @@ import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 import { prisma } from '../src/lib/db.js';
-import { issue, key, PIN, resetDb } from './helpers.js';
+import { issue, key, as, resetDb } from './helpers.js';
 
 const app = createApp();
 let world: Awaited<ReturnType<typeof resetDb>>;
@@ -29,7 +29,7 @@ describe('snapshot', () => {
     const issued = [
       await issue(app, world.deposits.id), await issue(app, world.deposits.id), await issue(app, world.loans.id),
     ];
-    await request(app).post(`/api/counters/${world.counter.id}/call-next`).set(PIN).expect(200);
+    await request(app).post(`/api/counters/${world.counter.id}/call-next`).set(as()).expect(200);
 
     const { body } = await request(app).get('/api/snapshot').expect(200);
     const raw = JSON.stringify(body);
@@ -46,17 +46,17 @@ describe('snapshot', () => {
     expect(body.events).toEqual([]);
   });
 
-  it('staff view (PIN) keeps token ids for Counter and Ops, but still no secrets', async () => {
+  it('staff view (session) keeps token ids for Counter and Ops, but still no secrets', async () => {
     const t = await issue(app, world.deposits.id);
-    const { body } = await request(app).get('/api/snapshot').set(PIN).expect(200);
+    const { body } = await request(app).get('/api/snapshot').set(as()).expect(200);
     expect(body.tokens.map((x: { id: string }) => x.id)).toEqual([t.id]);
     expect(body.events.length).toBeGreaterThan(0);
     expect(JSON.stringify(body)).not.toContain(t.secret);
   });
 
-  it('a wrong PIN gets the public view', async () => {
+  it('the old shared-PIN header gets the public view', async () => {
     const t = await issue(app, world.deposits.id);
-    const { body } = await request(app).get('/api/snapshot').set({ 'x-staff-pin': '0000' }).expect(200);
+    const { body } = await request(app).get('/api/snapshot').set({ 'x-staff-pin': '1234' }).expect(200);
     expect(JSON.stringify(body)).not.toContain(t.id);
   });
 });
@@ -94,9 +94,9 @@ describe.each(ROUTES)('$name access', ({ send }) => {
     expect(r.body.id).toBe(t.id);
   });
 
-  it('works with the staff PIN', async () => {
+  it('works with a staff session', async () => {
     const t = await issue(app, world.deposits.id);
-    const r = await send(t.id).set(PIN).expect(200);
+    const r = await send(t.id).set(as()).expect(200);
     expect(r.body.id).toBe(t.id);
   });
 });
@@ -119,9 +119,9 @@ describe('redirect', () => {
   it('the child token gets its own secret, reachable from the parent link only', async () => {
     const t = await issue(app, world.deposits.id);
     const counter = `/api/counters/${world.counter.id}`;
-    await request(app).post(`${counter}/call-next`).set(PIN).expect(200);
-    await request(app).post(`${counter}/ack`).set(PIN).expect(200);
-    const { body } = await request(app).post(`${counter}/redirect`).set(PIN).send({ serviceId: world.loans.id }).expect(200);
+    await request(app).post(`${counter}/call-next`).set(as()).expect(200);
+    await request(app).post(`${counter}/ack`).set(as()).expect(200);
+    const { body } = await request(app).post(`${counter}/redirect`).set(as()).send({ serviceId: world.loans.id }).expect(200);
 
     const child = await prisma.token.findUniqueOrThrow({ where: { id: body.child.id } });
     expect(child.secret).toMatch(/^[A-Za-z0-9_-]{32}$/);

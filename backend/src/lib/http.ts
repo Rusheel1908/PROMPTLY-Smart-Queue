@@ -1,6 +1,16 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
-import { config, RATE_LIMITS } from '../config.js';
-import { safeEqual } from './secret.js';
+import { ROLE_LABEL, can, type Action } from './permissions.js';
+import { sessionFor, type StaffUser } from '../services/auth.js';
+
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace Express {
+    interface Request {
+      staff?: StaffUser; // set by loadStaff when the request carries a live session
+      bearer?: string;
+    }
+  }
+}
 
 export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -20,24 +30,55 @@ export function must(cond: unknown, status: number, message: string): void {
 export const handle = (fn: (req: Request, res: Response) => Promise<unknown>, status = 200): RequestHandler =>
   (req, res, next) => { fn(req, res).then((data) => res.status(status).json(data)).catch(next); };
 
-export const isStaff = (req: Request) => safeEqual(req.header('x-staff-pin'), config.STAFF_PIN);
+type Limit = { max: number; windowMs: number };
+const TOO_MANY = 'Too many requests, please slow down';
+
+/** Per-IP hit log for a fixed window. */
+function hitLog({ windowMs }: Limit) {
+  const hits = new Map<string, number[]>();
+  const recent = (req: Request) => (hits.get(req.ip ?? 'unknown') ?? []).filter((t) => Date.now() - t < windowMs);
+  const add = (req: Request) => hits.set(req.ip ?? 'unknown', [...recent(req), Date.now()]);
+  return { recent, add };
+}
 
 /** Tiny in-memory fixed-window rate limiter for public routes. */
-export function rateLimit({ max, windowMs }: { max: number; windowMs: number }): RequestHandler {
-  const hits = new Map<string, number[]>();
+export function rateLimit(limit: Limit): RequestHandler {
+  const log = hitLog(limit);
   return (req: Request, _res: Response, next: NextFunction) => {
-    const now = Date.now();
-    const key = req.ip ?? 'unknown';
-    const recent = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
-    hits.set(key, [...recent, now]);
-    must(recent.length < max, 429, 'Too many requests, please slow down');
+    const seen = log.recent(req).length;
+    log.add(req);
+    must(seen < limit.max, 429, TOO_MANY);
     next();
   };
 }
 
-/** Only wrong-PIN attempts count, so staff working normally never hit the limit. */
-const pinGuesses = rateLimit(RATE_LIMITS.staffAuth);
+/**
+ * Like rateLimit, but only failures count: `guard` refuses an IP with too many recent failures
+ * (before any check runs, so a right guess cannot slip through), `record` adds one.
+ */
+export function failureLimit(limit: Limit) {
+  const log = hitLog(limit);
+  const guard: RequestHandler = (req, _res, next) => { must(log.recent(req).length < limit.max, 429, TOO_MANY); next(); };
+  return { guard, record: log.add };
+}
 
-/** Staff-only routes: a shared PIN stands in for a role-scoped session in this MVP. */
-export const requireStaff: RequestHandler = (req, res, next) =>
-  isStaff(req) ? next() : pinGuesses(req, res, () => fail(401, 'Staff PIN required'));
+const bearerOf = (req: Request) => /^Bearer (\S+)$/.exec(req.header('authorization') ?? '')?.[1];
+
+/** Attach req.staff when the request carries a live session. Never rejects: public routes use it too. */
+export const loadStaff: RequestHandler = (req, _res, next) => {
+  req.bearer = bearerOf(req);
+  sessionFor(req.bearer).then((s) => { req.staff = s?.staff; next(); }).catch(next);
+};
+
+/** Staff routes: 401 without a live session, 403 when the PERMISSIONS table does not allow the caller's role. */
+export const requireRole = (action: Action): RequestHandler => (req, res, next) =>
+  loadStaff(req, res, (err?: unknown) => {
+    if (err) return next(err);
+    if (!req.staff) return next(new HttpError(401, 'Log in required'));
+    can(req.staff.role, action)
+      ? next()
+      : next(new HttpError(403, `Your role (${ROLE_LABEL[req.staff.role]}) cannot do this. Ask a supervisor.`));
+  });
+
+/** The staff member a requireRole route runs as. */
+export const actor = (req: Request) => req.staff!.id;

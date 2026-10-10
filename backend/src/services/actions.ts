@@ -335,14 +335,14 @@ export async function spawnDemo(count: number) {
   return { issued: issued.map((t) => t.code) };
 }
 
-export const resetDemo = () => serial(async () => {
+export const resetDemo = (actor: string) => serial(async () => {
   await prisma.$transaction([
     prisma.etaChange.deleteMany(),
     prisma.token.deleteMany(),
     prisma.event.deleteMany(),
     prisma.counter.updateMany({ data: { status: 'OPEN' } }),
   ]);
-  await logEvent('DEMO_RESET', { actor: 'staff' });
+  await logEvent('DEMO_RESET', { actor });
   await replan('Demo reset');
   queueSignals.emit('counters-changed'); // every counter reopened
   return { ok: true };

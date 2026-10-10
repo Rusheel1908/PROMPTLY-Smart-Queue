@@ -2,7 +2,7 @@ import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 import { prisma } from '../src/lib/db.js';
-import { counter, issue, key, PIN, resetDb, staff } from './helpers.js';
+import { counter, issue, key, as, resetDb, staff } from './helpers.js';
 
 const app = createApp();
 let world: Awaited<ReturnType<typeof resetDb>>;
@@ -32,25 +32,25 @@ describe('issuing', () => {
     expect(r.body.issues[0].path).toEqual(['class']);
   });
 
-  it.each(['PRIORITY', 'EMERGENCY', 'APPOINTMENT'])('%s from the kiosk without a PIN → 403', async (cls) => {
+  it.each(['PRIORITY', 'EMERGENCY', 'APPOINTMENT'])('%s from the kiosk without a staff session → 403', async (cls) => {
     await kiosk({ serviceId: world.deposits.id, class: cls })
       .expect(403, { error: 'Priority classes must be verified by staff' });
-    await kiosk({ serviceId: world.deposits.id, class: cls }).set({ 'x-staff-pin': '0000' }).expect(403);
+    await kiosk({ serviceId: world.deposits.id, class: cls }).set({ 'x-staff-pin': '1234' }).expect(403);
     expect(await prisma.token.count()).toBe(0);
   });
 
-  it('staff may issue a priority token, logged with actor "staff"', async () => {
+  it('staff may issue a priority token, logged with the staff member id', async () => {
     const t = await issue(app, world.deposits.id, 'PRIORITY');
     expect(t).toMatchObject({ class: 'PRIORITY', state: 'WAITING' });
     const ev = await prisma.event.findFirstOrThrow({ where: { tokenId: t.id, type: 'TOKEN_ISSUED' } });
-    expect(ev.actor).toBe('staff');
+    expect(ev.actor).toBe(world.staff.asha);
   });
 });
 
 describe('counters', () => {
-  it('counter actions need the staff PIN', async () => {
+  it('counter actions need a staff session', async () => {
     await request(app).post(`/api/counters/${world.counter.id}/call-next`).expect(401);
-    await request(app).post(`/api/counters/${world.counter.id}/call-next`).set({ 'x-staff-pin': '0000' }).expect(401);
+    await request(app).post(`/api/counters/${world.counter.id}/call-next`).set({ 'x-staff-pin': '1234' }).expect(401);
   });
 
   it('unknown counter → 404', async () => {
@@ -93,6 +93,6 @@ describe('customer routes', () => {
   });
 
   it('reactivate of an unknown token → 404', async () => {
-    await request(app).post('/api/tokens/no-such-token/reactivate').set(PIN).expect(404, { error: 'Token not found' });
+    await request(app).post('/api/tokens/no-such-token/reactivate').set(as()).expect(404, { error: 'Token not found' });
   });
 });

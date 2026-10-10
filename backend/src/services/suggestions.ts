@@ -110,7 +110,7 @@ export const applySuggestion = (id: string, actor: string) => serial(async () =>
 
 /**
  * Recompute after counter changes and when promises at risk cross the trigger. Only a bare ping is broadcast:
- * the WebSocket is public, so the details stay behind the staff PIN. Returns a stop function.
+ * the WebSocket is public, so the details stay behind a supervisor session. Returns a stop function.
  */
 export function startSuggestions() {
   let timer: ReturnType<typeof setTimeout> | undefined;

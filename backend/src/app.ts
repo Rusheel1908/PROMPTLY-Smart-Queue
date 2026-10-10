@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import { ZodError } from 'zod';
 import { config, LIMITS } from './config.js';
 import { fail, HttpError } from './lib/http.js';
+import { authRouter } from './routes/auth.js';
 import { countersRouter } from './routes/counters.js';
 import { opsRouter } from './routes/ops.js';
 import { tokensRouter } from './routes/tokens.js';
@@ -19,6 +20,7 @@ export function createApp() {
   app.use(express.json({ limit: LIMITS.jsonBody }));
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
+  app.use('/api/auth', authRouter);
   app.use('/api/tokens', tokensRouter);
   app.use('/api/counters', countersRouter);
   app.use('/api', opsRouter);

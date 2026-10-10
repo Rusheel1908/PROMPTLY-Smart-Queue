@@ -3,17 +3,20 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 import { RATE_LIMITS } from '../src/config.js';
 import { prisma } from '../src/lib/db.js';
-import { PIN } from './helpers.js';
+import { resetDb, STAFF } from './helpers.js';
 
 // own file: the rate limiters are per-module, so the limits used up here don't leak into other test files
 const app = createApp();
 afterAll(() => prisma.$disconnect());
 
-describe('staff PIN', () => {
-  it('wrong or missing PIN → 401, right PIN → 200', async () => {
-    await request(app).get('/api/auth/check').expect(401);
-    await request(app).get('/api/auth/check').set({ 'x-staff-pin': '0000' }).expect(401);
-    await request(app).get('/api/auth/check').set(PIN).expect(200, { ok: true });
+describe('login rate limit', () => {
+  it('failed logins from one IP answer 429 once the limit is used up, even for the right PIN', async () => {
+    const { staff } = await resetDb();
+    const { max } = RATE_LIMITS.login;
+    // spread over unknown ids, so no single account locks first
+    for (let i = 0; i < max; i++) await request(app).post('/api/auth/login').send({ staffId: `nobody-${i}`, pin: '000000' }).expect(401);
+    const r = await request(app).post('/api/auth/login').send({ staffId: staff.ravi, pin: STAFF.ravi.pin }).expect(429);
+    expect(r.body).toEqual({ error: 'Too many requests, please slow down' });
   });
 });
 

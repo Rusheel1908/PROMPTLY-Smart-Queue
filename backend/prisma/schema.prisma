@@ -114,3 +114,32 @@ model EtaChange {
   reason     String
   causeEvent Int?
 }
+
+enum StaffRole {
+  STAFF
+  SUPERVISOR
+}
+
+/// A named staff account. Every staff action is logged with its id as the event actor.
+model Staff {
+  id           String    @id @default(cuid())
+  name         String    @unique // login picker + seed upsert key
+  role         StaffRole @default(STAFF)
+  pinHash      String // "scrypt$<saltHex>$<hashHex>", never the PIN itself
+  active       Boolean   @default(true)
+  failedLogins Int       @default(0) // wrong PINs since the last success or lockout
+  lockedUntil  DateTime?
+  createdAt    DateTime  @default(now())
+  sessions     Session[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique // sha256 of the bearer token; the raw token is never stored
+  staffId   String
+  staff     Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([staffId])
+}

@@ -38,7 +38,6 @@ jobs:
     # throwaway values for the CI database; nothing here is a real secret
     env:
       NODE_ENV: test
-      STAFF_PIN: '1234'
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/promptly_test?schema=public
       TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/promptly_test?schema=public
     steps:

@@ -18,7 +18,7 @@ afterAll(() => prisma.$disconnect());
 const get = () => staff(app).get(SUGGESTIONS).expect(200).then((r) => r.body);
 
 describe('access', () => {
-  it('both routes need the staff PIN', async () => {
+  it('both routes need a supervisor session', async () => {
     await request(app).get(SUGGESTIONS).expect(401);
     await request(app).post(`${SUGGESTIONS}/anything/apply`).expect(401);
   });

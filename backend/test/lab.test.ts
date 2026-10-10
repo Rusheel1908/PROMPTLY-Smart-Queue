@@ -9,7 +9,7 @@ import { prisma } from '../src/lib/db.js';
 import { attachRealtime } from '../src/realtime.js';
 import { startLabJob } from '../src/services/labJobs.js';
 import { SPECS } from '../src/sim/evaluate.js';
-import { PIN } from './helpers.js';
+import { as, resetDb } from './helpers.js';
 
 type Msg = { type: string; data: Record<string, unknown> };
 
@@ -18,6 +18,7 @@ let client: WebSocket;
 const messages: Msg[] = [];
 
 beforeAll(async () => {
+  await resetDb(); // staff accounts + sessions
   server = createServer(createApp());
   attachRealtime(server);
   server.listen(0);
@@ -36,8 +37,8 @@ afterAll(async () => {
 const SMALL = { days: 1, runs: 10, policies: ['F'] };
 const HEAVY = { days: 3, runs: 40 }; // all policies, a few seconds of CPU (arrival sampling makes each day ~2× costlier)
 
-const start = (body: object) => request(server).post('/api/lab/run').set(PIN).send(body);
-const job = (id: string) => request(server).get(`/api/lab/jobs/${id}`).set(PIN).expect(200).then((r) => r.body);
+const start = (body: object) => request(server).post('/api/lab/run').set(as()).send(body);
+const job = (id: string) => request(server).get(`/api/lab/jobs/${id}`).set(as()).expect(200).then((r) => r.body);
 
 /** Poll a job until `done(status)` holds (or fail after `ms`). */
 async function waitFor(id: string, done: (status: string) => boolean, ms = 30_000) {
@@ -52,9 +53,9 @@ async function waitFor(id: string, done: (status: string) => boolean, ms = 30_00
 const finished = (s: string) => s === 'done' || s === 'failed';
 
 describe('lab access', () => {
-  it('starting a live run needs the staff PIN', async () => {
+  it('starting a live run needs a supervisor session', async () => {
     await request(server).post('/api/lab/run').send(SMALL).expect(401);
-    await request(server).post('/api/lab/run').set({ 'x-staff-pin': '0000' }).send(SMALL).expect(401);
+    await request(server).post('/api/lab/run').set({ 'x-staff-pin': '1234' }).send(SMALL).expect(401);
   });
 
   it('rejects out-of-range params with 400', async () => {
@@ -62,7 +63,7 @@ describe('lab access', () => {
   });
 
   it('unknown job → 404', async () => {
-    await request(server).get('/api/lab/jobs/nope').set(PIN).expect(404);
+    await request(server).get('/api/lab/jobs/nope').set(as()).expect(404);
   });
 });
 
