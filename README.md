@@ -1,3 +1,5 @@
+[![CI](https://github.com/Rusheel1908/PROMPTLY-Smart-Queue/actions/workflows/ci.yml/badge.svg)](https://github.com/Rusheel1908/PROMPTLY-Smart-Queue/actions/workflows/ci.yml)
+
 # Promptly: Fairline smart queue (Team Alpha, CBC015)
 
 Promise-aware queue management. Tokens are dispatched by **class-adjusted earliest-deadline-first** with a hard
@@ -40,6 +42,24 @@ staff PIN; anything else gets a 404. Without the PIN, `/api/snapshot` and the We
 > Either press **Reset demo** on `/ops` while the old version is still running, or run
 > `echo 'TRUNCATE "EtaChange", "Event", "Token" RESTART IDENTITY;' | npx prisma db execute --stdin`.
 > Then `npx prisma db push`. Services and counters are kept either way.
+
+## What happens if the server restarts
+Postgres is the source of truth: every token, counter and the full event log live there, so a crash or redeploy loses
+no customer's place. What lives only in memory, and how it comes back:
+
+| In memory | On restart |
+|---|---|
+| Forecast ETAs and the per-service quotes on the kiosk | Rebuilt by a full re-forecast at boot (seeded, so the same queue gives the same numbers) |
+| Sweeper timers (call window, 30 s re-forecast) | Restarted at boot |
+| A customer who was being called | Their call window counts from `lastCallAt` in the database, so the downtime counts too: the sweeper recalls or misses them on its first pass |
+| The one-at-a-time action queue (`serial()`) | Starts empty. A request cut off mid-way fails for its caller, who can retry. Known gap: an action's token update and its event row are separate writes, so a crash exactly between them leaves the token right but its event missing from the log |
+| Rate-limit counters | Start from zero (a brief allowance, not a data loss) |
+| Live Lab runs | Lost: their job ids answer 404, and staff can start a new run. The saved Lab result is a file, so it is unaffected |
+
+Screens reconnect to the WebSocket by themselves (backoff up to 8 s) and refresh on the next queue update, at most 30 s
+later. `backend/test/restart.test.ts` proves this: it crashes and reboots the API mid-scenario and checks the snapshot is
+the same, the next call picks the same customer, and called customers are still recalled and missed on time.
+`backend/test/eventReplay.test.ts` rebuilds every token's state from the event log alone and checks it against the table.
 
 ## Screens
 | Route | Who | What |
