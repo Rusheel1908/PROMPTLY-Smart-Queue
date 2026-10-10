@@ -69,4 +69,11 @@ export interface LabPolicyResult {
 export interface LabResult {
   synthetic: true; days: number; seed: number; runs: number; sampleEvery: number;
   arrivalsPerDay: number; elapsedMs: number; results: LabPolicyResult[];
+  source: 'precomputed' | 'live';
+  generatedAt?: string; // precomputed: when `npm run lab:snapshot` ran
+}
+
+export interface LabJob {
+  id: string; status: 'queued' | 'running' | 'done' | 'failed';
+  progress?: number; result?: LabResult; error?: string; createdAt: string; finishedAt?: string;
 }

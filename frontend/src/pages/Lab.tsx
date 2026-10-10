@@ -1,13 +1,15 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { CheckCircle2, FlaskConical, Info, Play, Table2, XCircle } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { AlertTriangle, Archive, CheckCircle2, FlaskConical, Info, Lock, Play, Table2, X, XCircle, Zap } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
-import { Button, Card, Chip, Segmented, Skeleton, useAction } from '../components/ui';
-import { api } from '../lib/api';
-import { cx, pct } from '../lib/format';
-import type { LabPolicyResult, LabResult } from '../lib/types';
+import { PinForm, useStaff } from '../components/StaffGate';
+import { Button, Card, Chip, Modal, Segmented, Skeleton, useToast } from '../components/ui';
+import { api, ApiError } from '../lib/api';
+import { cx, fmtClock, pct } from '../lib/format';
+import { useSocket } from '../lib/live';
+import type { LabJob, LabPolicyResult, LabResult } from '../lib/types';
 
 /** Emphasis encoding by policy group (legend shown above the charts). */
 const GROUP = {
@@ -29,25 +31,94 @@ const METRICS: { key: keyof LabPolicyResult; title: string; unit: string; better
   { key: 'etaMae', title: 'ETA error', unit: 'mean |predicted − actual|, min', better: 'lower', fmt: (v) => `${v.toFixed(1)}m` },
 ];
 
+type Notice = { tone: 'warn' | 'bad'; text: string };
+const NOTICE_TONE = { warn: 'bg-amber-50 text-amber-900 ring-amber-200', bad: 'bg-red-50 text-critical ring-critical/30' };
+
+/** How a refused live run is explained; anything else shows the server's message. */
+const RUN_ERRORS: Record<number, Notice> = {
+  409: { tone: 'warn', text: 'A live run is already in progress (maybe started from another screen). Try again when it finishes.' },
+  401: { tone: 'warn', text: 'The staff PIN is required to run live. Enter it and try again.' },
+};
+
+const fmtDate = (d?: string) => (d ? new Date(d).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
+
+/** Where the result on screen came from, always stated on the page. */
+const SOURCE: Record<LabResult['source'], { icon: typeof Archive; cls: string; label: (r: LabResult) => string }> = {
+  precomputed: { icon: Archive, cls: 'bg-amber-50 text-amber-800 ring-amber-200', label: (r) => `Pre-computed on ${fmtDate(r.generatedAt)}, synthetic data` },
+  live: { icon: Zap, cls: 'bg-blue-50 text-brand ring-brand/30', label: (r) => `Live run · ${fmtClock(r.generatedAt)}, synthetic data` },
+};
+
+const POLL_MS = 500;
+const isFinished = (j: LabJob) => j.status === 'done' || j.status === 'failed';
+
 export default function Lab() {
   const [days, setDays] = useState(8);
   const [runs, setRuns] = useState(40);
   const [seed, setSeed] = useState(1);
-  const [result, setResult] = useState<LabResult | null>(null);
+  const [saved, setSaved] = useState<LabResult | null>(null);
+  const [live, setLive] = useState<LabResult | null>(null);
+  const [showLive, setShowLive] = useState(false);
+  const [job, setJob] = useState<LabJob | null>(null);
+  const [posting, setPosting] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [askPin, setAskPin] = useState(false);
   const [view, setView] = useState<'charts' | 'table'>('charts');
-  const { run, busy } = useAction();
   const [elapsed, setElapsed] = useState(0);
+  const staff = useStaff();
+  const toast = useToast();
 
   useEffect(() => {
-    const started = Date.now();
-    const id = busy === 'lab' ? setInterval(() => setElapsed(Date.now() - started), 100) : undefined;
-    return () => clearInterval(id);
-  }, [busy]);
+    api<LabResult>('/lab/latest').then(setSaved).catch((e) => setNotice({ tone: 'bad', text: `Could not load the saved result: ${e.message}` }));
+  }, []);
 
-  const go = () => run('lab', () => api<LabResult>('/lab/run', { json: { days, runs, seed } }), (r) => `Simulated ${r.days} days × ${r.results.length} policies in ${(r.elapsedMs / 1000).toFixed(1)}s`).then((r) => r && setResult(r));
-  useEffect(() => { go(); }, []);
+  const running = job != null && !isFinished(job);
+  const jobId = running ? job.id : null;
 
+  const ON_FINISH: Record<'done' | 'failed', (j: LabJob) => void> = {
+    done: (j) => {
+      setLive({ ...j.result!, generatedAt: j.finishedAt });
+      setShowLive(true);
+      toast(`Live run: ${j.result!.days} days × ${j.result!.results.length} policies in ${(j.result!.elapsedMs / 1000).toFixed(1)}s`, 'good');
+    },
+    failed: (j) => setNotice({ tone: 'bad', text: `Live run failed: ${j.error}` }),
+  };
+
+  // poll the running job; a "lab" socket ping triggers an immediate check
+  const check = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    if (!jobId) return;
+    let stopped = false;
+    const stop = (j: LabJob | null) => { stopped = true; setJob(j); };
+    check.current = () => void api<LabJob>(`/lab/jobs/${jobId}`).then((j) => {
+      if (stopped) return;
+      isFinished(j) ? (stop(j), ON_FINISH[j.status as 'done' | 'failed'](j)) : setJob(j);
+    }).catch((e) => {
+      // the server answered (job gone, PIN changed): give up; network blips just retry
+      e instanceof ApiError && !stopped && (stop(null), setNotice({ tone: 'bad', text: `Lost track of the live run: ${e.message}` }));
+    });
+    const poll = setInterval(() => check.current(), POLL_MS);
+    const t0 = Date.now();
+    const tick = setInterval(() => setElapsed(Date.now() - t0), 100);
+    return () => { stopped = true; clearInterval(poll); clearInterval(tick); setElapsed(0); };
+  }, [jobId]);
+  useSocket((m) => { m.type === 'lab' && (m.data as { jobId?: string }).jobId === jobId && check.current(); });
+
+  const start = () => {
+    setNotice(null);
+    setPosting(true);
+    api<{ jobId: string }>('/lab/run', { json: { days, runs, seed } })
+      .then(({ jobId: id }) => setJob({ id, status: 'queued', createdAt: new Date().toISOString() }))
+      .catch((e: ApiError) => {
+        setNotice(RUN_ERRORS[e.status] ?? { tone: 'bad', text: e.message });
+        e.status === 401 && (staff.lock(), setAskPin(true));
+      })
+      .finally(() => setPosting(false));
+  };
+  const runLive = () => (staff.phase === 'open' ? start() : setAskPin(true));
+
+  const result = showLive && live ? live : saved;
   const by = Object.fromEntries((result?.results ?? []).map((r) => [r.id, r]));
+  const progress = job?.progress ?? 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -66,16 +137,46 @@ export default function Lab() {
           <span className="font-semibold text-ink-2">Seed</span>
           <input type="number" min={1} value={seed} onChange={(e) => setSeed(Math.max(1, +e.target.value || 1))} className="h-10 w-24 rounded-xl px-3 ring-1 ring-line outline-none focus:ring-2 focus:ring-brand" />
         </label>
-        <Button size="lg" icon={Play} loading={busy === 'lab'} onClick={go} className="ml-auto">
-          {busy === 'lab' ? `Simulating… ${(elapsed / 1000).toFixed(1)}s` : 'Run evaluation'}
+        <Button size="lg" icon={staff.phase === 'open' ? Play : Lock} loading={posting || running} onClick={runLive} className="ml-auto">
+          {running ? `Running… ${pct(progress)} · ${(elapsed / 1000).toFixed(1)}s` : staff.phase === 'open' ? 'Run live' : 'Run live (staff)'}
         </Button>
+        {running && (
+          <div className="basis-full">
+            <div className="h-2 overflow-hidden rounded-full bg-line/60">
+              <motion.div className="h-full rounded-full bg-brand" initial={{ width: 0 }} animate={{ width: `${progress * 100}%` }} />
+            </div>
+            <p className="mt-1.5 text-xs text-muted">
+              {job.status === 'queued' ? 'Starting a background worker…' : 'Simulating in a background worker. The board, counters and status pages keep running.'}
+            </p>
+          </div>
+        )}
       </Card>
+
+      <AnimatePresence>
+        {notice && (
+          <motion.div role="alert" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className={cx('flex items-start gap-2 rounded-xl px-4 py-3 text-sm ring-1', NOTICE_TONE[notice.tone])}>
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <span>{notice.text}</span>
+            <button onClick={() => setNotice(null)} className="ml-auto rounded p-0.5 hover:bg-black/5" aria-label="Dismiss"><X className="size-4" /></button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence mode="wait">
         {!result ? (
           <motion.div key="sk" className="grid gap-4 md:grid-cols-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-72" />)}</motion.div>
         ) : (
-          <motion.div key={`${result.seed}-${result.days}-${result.runs}-${result.elapsedMs}`} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6">
+          <motion.div key={`${result.source}-${result.generatedAt}`} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+            className={cx('flex flex-col gap-6 transition-opacity', running && 'opacity-60')}>
+            <div className="flex flex-wrap items-center gap-3">
+              <Chip icon={SOURCE[result.source].icon} className={SOURCE[result.source].cls}>{SOURCE[result.source].label(result)}</Chip>
+              {live && (
+                <button onClick={() => setShowLive(!showLive)} className="text-sm font-semibold text-brand hover:underline">
+                  {showLive ? 'Back to saved result' : 'Show live result'}
+                </button>
+              )}
+            </div>
             <Verdicts by={by} />
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-4 text-sm text-ink-2">
@@ -93,6 +194,11 @@ export default function Lab() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <Modal open={askPin} onClose={() => setAskPin(false)} title="Staff PIN to run live">
+        <p className="mb-4 text-sm text-ink-2">Live runs use server CPU, so only staff can start one. The saved result stays visible to everyone.</p>
+        <PinForm unlock={staff.unlock} onUnlocked={() => { setAskPin(false); start(); }} />
+      </Modal>
     </div>
   );
 }
