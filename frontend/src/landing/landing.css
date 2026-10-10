@@ -1,0 +1,14 @@
+/* Self-hosted fonts (work offline at the venue). Imported only by the landing page, so other pages never download them. */
+@import '@fontsource/bricolage-grotesque/latin-600.css';
+@import '@fontsource/bricolage-grotesque/latin-800.css';
+@import '@fontsource/jetbrains-mono/latin-400.css';
+@import '@fontsource/jetbrains-mono/latin-600.css';
+
+.lp-display { font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-optical-sizing: auto; }
+.lp-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+.lp-space { background: linear-gradient(180deg, #071a3d 0%, #040f24 100%); }
+
+@keyframes lp-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.lp-pulse { animation: lp-pulse 1.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .lp-pulse { animation: none; } }

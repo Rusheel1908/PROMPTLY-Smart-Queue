@@ -2,7 +2,8 @@ import { lazy } from 'react';
 
 /** One dynamic import per page, so each page (and the libraries only it uses) is its own chunk. */
 const LOADERS = {
-  '/': () => import('../pages/Kiosk'),
+  '/': () => import('../landing/Landing'),
+  '/kiosk': () => import('../pages/Kiosk'),
   '/counter': () => import('../pages/Counter'),
   '/board': () => import('../pages/Board'),
   '/status': () => import('../pages/Status'),
@@ -13,7 +14,8 @@ const LOADERS = {
 type PagePath = keyof typeof LOADERS;
 
 export const Pages = {
-  Kiosk: lazy(LOADERS['/']),
+  Landing: lazy(LOADERS['/']),
+  Kiosk: lazy(LOADERS['/kiosk']),
   Counter: lazy(LOADERS['/counter']),
   Board: lazy(LOADERS['/board']),
   Status: lazy(LOADERS['/status']),

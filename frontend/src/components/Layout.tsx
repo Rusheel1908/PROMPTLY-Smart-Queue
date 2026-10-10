@@ -9,7 +9,7 @@ import { StaffBadge } from './StaffGate';
 import { LiveDot } from './ui';
 
 const LINKS = [
-  { to: '/', label: 'Kiosk', icon: Ticket },
+  { to: '/kiosk', label: 'Kiosk', icon: Ticket },
   { to: '/counter', label: 'Counter', icon: UserRoundCheck },
   { to: '/board', label: 'Board', icon: MonitorPlay },
   { to: '/ops', label: 'Ops', icon: LayoutDashboard },
