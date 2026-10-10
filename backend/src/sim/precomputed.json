@@ -1,6 +1,6 @@
 {
   "source": "precomputed",
-  "generatedAt": "2026-10-10T13:09:59.125Z",
+  "generatedAt": "2026-10-10T14:24:18.217Z",
   "params": {
     "days": 30,
     "seed": 1,
@@ -13,7 +13,8 @@
       "F-noScarcity",
       "F-strictPriority",
       "F-naiveEta",
-      "F-missBack"
+      "F-missBack",
+      "F-noArrivals"
     ]
   },
   "synthetic": true,
@@ -22,7 +23,7 @@
   "runs": 40,
   "sampleEvery": 3,
   "arrivalsPerDay": 331,
-  "elapsedMs": 12824,
+  "elapsedMs": 30284,
   "results": [
     {
       "id": "B1",
@@ -425,8 +426,8 @@
         }
       },
       "maxNormalWait": 58.44650286138924,
-      "promiseKept": 0.8196969696969697,
-      "etaMae": 2.858863083208293,
+      "promiseKept": 0.8942424242424243,
+      "etaMae": 2.711569675798145,
       "utilization": 0.8033234349623524,
       "starvation": 453,
       "missRecovery": 4.522984864397034,
@@ -612,8 +613,8 @@
         }
       },
       "maxNormalWait": 58.07904502082579,
-      "promiseKept": 0.8196969696969697,
-      "etaMae": 2.8771913487675995,
+      "promiseKept": 0.8987878787878788,
+      "etaMae": 2.6936757671149567,
       "utilization": 0.8036106860949229,
       "starvation": 423,
       "missRecovery": 4.467508448927652,
@@ -799,8 +800,8 @@
         }
       },
       "maxNormalWait": 56.23370500751652,
-      "promiseKept": 0.8296969696969697,
-      "etaMae": 2.7931913152085426,
+      "promiseKept": 0.8996969696969697,
+      "etaMae": 2.772964315633635,
       "utilization": 0.804354019152776,
       "starvation": 818,
       "missRecovery": 3.8508297058240664,
@@ -1173,8 +1174,8 @@
         }
       },
       "maxNormalWait": 67.8100732398499,
-      "promiseKept": 0.8475757575757575,
-      "etaMae": 2.927285711286154,
+      "promiseKept": 0.9154545454545454,
+      "etaMae": 2.847701454902585,
       "utilization": 0.8044651946790817,
       "starvation": 434,
       "missRecovery": 6.555262387177593,
@@ -1330,6 +1331,193 @@
           "day": 30,
           "maxNormalWait": 38.714327003939076,
           "meanWait": 4.341627768092797
+        }
+      ]
+    },
+    {
+      "id": "F-noArrivals",
+      "label": "F − arrival sampling",
+      "group": "ablation",
+      "waitByClass": {
+        "EMERGENCY": {
+          "mean": 3.5682878810941787,
+          "p95": 15.402605053960283,
+          "n": 93
+        },
+        "PRIORITY": {
+          "mean": 5.187856705160591,
+          "p95": 21.18677434709519,
+          "n": 1027
+        },
+        "APPOINTMENT": {
+          "mean": 4.786162881188647,
+          "p95": 18.684965064430887,
+          "n": 439
+        },
+        "NORMAL": {
+          "mean": 10.204807106429044,
+          "p95": 34.68538442753739,
+          "n": 8310
+        }
+      },
+      "maxNormalWait": 58.44650286138924,
+      "promiseKept": 0.8196969696969697,
+      "etaMae": 2.858863083208293,
+      "utilization": 0.8033234349623524,
+      "starvation": 453,
+      "missRecovery": 4.522984864397034,
+      "noShows": 64,
+      "served": 9869,
+      "perDay": [
+        {
+          "day": 1,
+          "maxNormalWait": 74.36579589129066,
+          "meanWait": 12.772697597752734
+        },
+        {
+          "day": 2,
+          "maxNormalWait": 41.287226722588144,
+          "meanWait": 5.240894096761214
+        },
+        {
+          "day": 3,
+          "maxNormalWait": 54.573028748401924,
+          "meanWait": 9.573078946433071
+        },
+        {
+          "day": 4,
+          "maxNormalWait": 34.65578330340693,
+          "meanWait": 6.107940188826109
+        },
+        {
+          "day": 5,
+          "maxNormalWait": 77.16574805339674,
+          "meanWait": 11.247835255204956
+        },
+        {
+          "day": 6,
+          "maxNormalWait": 64.09545504462886,
+          "meanWait": 8.565013375789343
+        },
+        {
+          "day": 7,
+          "maxNormalWait": 36.66892300253194,
+          "meanWait": 6.135363890492577
+        },
+        {
+          "day": 8,
+          "maxNormalWait": 35.76486296068148,
+          "meanWait": 4.533666624680597
+        },
+        {
+          "day": 9,
+          "maxNormalWait": 57.42044239972693,
+          "meanWait": 6.3220756248299095
+        },
+        {
+          "day": 10,
+          "maxNormalWait": 41.445732483098205,
+          "meanWait": 6.3029339281952526
+        },
+        {
+          "day": 11,
+          "maxNormalWait": 38.36838144642801,
+          "meanWait": 6.086849991988506
+        },
+        {
+          "day": 12,
+          "maxNormalWait": 133.04977776289172,
+          "meanWait": 25.261752311879242
+        },
+        {
+          "day": 13,
+          "maxNormalWait": 45.650294284269464,
+          "meanWait": 8.815247825213943
+        },
+        {
+          "day": 14,
+          "maxNormalWait": 75.947325661925,
+          "meanWait": 15.499545277049917
+        },
+        {
+          "day": 15,
+          "maxNormalWait": 102.83032305217964,
+          "meanWait": 9.734310186547834
+        },
+        {
+          "day": 16,
+          "maxNormalWait": 41.669528759861024,
+          "meanWait": 6.054081733703224
+        },
+        {
+          "day": 17,
+          "maxNormalWait": 53.83507140356439,
+          "meanWait": 5.2349605556781365
+        },
+        {
+          "day": 18,
+          "maxNormalWait": 34.55097656720054,
+          "meanWait": 5.258469468289004
+        },
+        {
+          "day": 19,
+          "maxNormalWait": 39.112274177340716,
+          "meanWait": 5.023931232690679
+        },
+        {
+          "day": 20,
+          "maxNormalWait": 53.94217983180548,
+          "meanWait": 8.1568881829095
+        },
+        {
+          "day": 21,
+          "maxNormalWait": 29.93997939592134,
+          "meanWait": 3.504095885382811
+        },
+        {
+          "day": 22,
+          "maxNormalWait": 59.05040460563446,
+          "meanWait": 12.522400851015867
+        },
+        {
+          "day": 23,
+          "maxNormalWait": 44.697288990429165,
+          "meanWait": 9.08272859302444
+        },
+        {
+          "day": 24,
+          "maxNormalWait": 89.20736569126471,
+          "meanWait": 18.802428455913798
+        },
+        {
+          "day": 25,
+          "maxNormalWait": 80.11182565966581,
+          "meanWait": 9.98195328371394
+        },
+        {
+          "day": 26,
+          "maxNormalWait": 26.99036799511146,
+          "meanWait": 4.110070078467076
+        },
+        {
+          "day": 27,
+          "maxNormalWait": 117.84560085483918,
+          "meanWait": 16.7028661319452
+        },
+        {
+          "day": 28,
+          "maxNormalWait": 53.28118205039514,
+          "meanWait": 9.752842179132845
+        },
+        {
+          "day": 29,
+          "maxNormalWait": 69.4434975887362,
+          "meanWait": 14.722388226105261
+        },
+        {
+          "day": 30,
+          "maxNormalWait": 46.42844145246247,
+          "meanWait": 5.37544203420217
         }
       ]
     }

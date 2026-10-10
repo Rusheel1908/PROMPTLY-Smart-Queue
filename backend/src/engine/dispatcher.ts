@@ -98,15 +98,35 @@ const FAST = new Map<Policy, { order: KeyFn; pick: Policy }>(
   Object.entries(ORDERS).map(([name, o]) => [POLICIES[name as PolicyName], { order: o.order, pick: orderedPick(o.ceiling) }]),
 );
 
+export interface Prepared {
+  waiting: EngineToken[];
+  pick: Policy;
+  /** Add a token to a prepared queue, keeping the static order (appends for other policies). */
+  insert: (waiting: EngineToken[], t: EngineToken) => void;
+}
+
+/** First index whose key sorts after `k` (upper bound), so equal keys keep arrival order. */
+function upperBound(xs: EngineToken[], k: number[], key: (t: EngineToken) => number[]): number {
+  let lo = 0;
+  let hi = xs.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    [lo, hi] = lexCompare(key(xs[mid]), k) <= 0 ? [mid + 1, hi] : [lo, mid];
+  }
+  return lo;
+}
+
 /**
  * Prepare a state for many repeated picks with fixed counters (forecast replays).
  * Static-order policies sort once and pick in O(first match); others fall back to full ranking.
  */
-export function prepare(policy: Policy, s: EngineState, now: number): { waiting: EngineToken[]; pick: Policy } {
+export function prepare(policy: Policy, s: EngineState, now: number): Prepared {
   const { order, pick } = FAST.get(policy) ?? { order: () => [], pick: policy };
   const ctx = { s, now, capable: capableCounts(s) };
-  const keyed = s.waiting.map((t) => ({ t, k: order(t, ctx) }));
-  return { waiting: keyed.sort((a, b) => lexCompare(a.k, b.k)).map((x) => x.t), pick };
+  const key = (t: EngineToken) => order(t, ctx);
+  const keyed = s.waiting.map((t) => ({ t, k: key(t) }));
+  const insert = (waiting: EngineToken[], t: EngineToken) => waiting.splice(upperBound(waiting, key(t), key), 0, t);
+  return { waiting: keyed.sort((a, b) => lexCompare(a.k, b.k)).map((x) => x.t), pick, insert };
 }
 
 /** Earliest-deadline-first with hard ceiling and scarcity tie-break. Pure: same input, same output. */

@@ -1,4 +1,5 @@
-import type { CounterStatus, Prisma, Token } from '@prisma/client';
+import type { CounterStatus, Prisma, Token, TokenClass } from '@prisma/client';
+import { ARRIVAL_CONFIG, estimateRates, Observed } from '../engine/arrivals.js';
 import { capableCounts } from '../engine/dispatcher.js';
 import { meanMinutes, posterior } from '../engine/duration.js';
 import { Band, forecast, quote } from '../engine/forecast.js';
@@ -30,15 +31,33 @@ export async function logEvent(
 
 /* ---------- world → engine ---------- */
 
+const startOfDay = () => new Date(new Date().setHours(0, 0, 0, 0));
+
 export async function loadWorld() {
-  const [services, counters, active] = await Promise.all([
+  const at = Date.now();
+  const [services, counters, active, issued, firstToday] = await Promise.all([
     prisma.service.findMany({ orderBy: { prefix: 'asc' } }),
     prisma.counter.findMany({ include: { skills: true }, orderBy: { name: 'asc' } }),
     prisma.token.findMany({ where: { state: { in: [...ACTIVE] } }, orderBy: { seq: 'asc' } }),
+    // arrival-rate inputs, read once per load (never per forecast replay)
+    prisma.event.findMany({
+      where: { type: 'TOKEN_ISSUED', ts: { gte: new Date(at - ARRIVAL_CONFIG.windowMs) } }, select: { ts: true, payload: true },
+    }),
+    prisma.event.findFirst({ where: { ts: { gte: startOfDay() } }, orderBy: { seq: 'asc' }, select: { ts: true } }),
   ]);
-  return { services, counters, active };
+  return { at, services, counters, active, issued, openedAt: firstToday?.ts.getTime() ?? at };
 }
 export type World = Awaited<ReturnType<typeof loadWorld>>;
+
+/** TOKEN_ISSUED events as observed arrivals. Older events name the service instead of its id. */
+function observedArrivals(w: World): Observed[] {
+  const idByName = Object.fromEntries(w.services.map((s) => [s.name, s.id]));
+  return w.issued.flatMap((e) => {
+    const p = (e.payload ?? {}) as { class?: TokenClass; serviceId?: string; service?: string };
+    const serviceId = p.serviceId ?? idByName[p.service ?? ''];
+    return serviceId && p.class ? [{ t: e.ts.getTime(), serviceId, cls: p.class }] : [];
+  });
+}
 
 export interface CounterOverride { id: string; status?: CounterStatus; skills?: string[] }
 
@@ -68,6 +87,7 @@ export function toEngine(w: World, overrides: CounterOverride[] = []): EngineSta
       }];
     })),
     waiting: w.active.filter((t) => t.state === 'WAITING').map(toEngineToken),
+    arrivals: estimateRates(observedArrivals(w), w.services.map((s) => s.id), w.at, w.openedAt),
   };
 }
 
@@ -128,8 +148,7 @@ export function publicToken(t: Token, now: number, pos: Record<string, number>) 
   };
 }
 
-const startOfDay = () => new Date(new Date().setHours(0, 0, 0, 0));
-const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+const avg =(xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
 export async function metrics() {
   const today = await prisma.token.findMany({ where: { arrivedAt: { gte: startOfDay() } } });

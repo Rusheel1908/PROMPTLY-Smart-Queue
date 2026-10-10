@@ -54,7 +54,7 @@ export const issueToken = (serviceId: string, cls: TokenClass, actor = 'kiosk') 
       deadline: new Date(now + service.targetWaitS * 1000 * CLASS_FACTOR[cls]),
     },
   });
-  const seq = await logEvent('TOKEN_ISSUED', { tokenId: token.id, payload: { class: cls, service: service.name }, actor });
+  const seq = await logEvent('TOKEN_ISSUED', { tokenId: token.id, payload: { class: cls, service: service.name, serviceId }, actor });
   const bands = await replan(JOIN_REASON[cls], seq);
   const p90 = bands[token.id]?.p90;
   // the P90 at issue time is frozen as this customer's promise (none when no counter can serve)

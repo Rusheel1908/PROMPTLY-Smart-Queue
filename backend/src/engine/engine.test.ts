@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { ARRIVAL_CONFIG, estimateRates, Observed } from './arrivals.js';
 import { POLICIES } from './dispatcher.js';
 import { observe, posterior, PRIOR_WEIGHT } from './duration.js';
 import { forecast, naiveEta, quote } from './forecast.js';
@@ -100,6 +101,75 @@ describe('forecast', () => {
   });
 });
 
+describe('arrival rates', () => {
+  const prior = ARRIVAL_CONFIG.priorPerServiceMin * ARRIVAL_CONFIG.priorClassShare.NORMAL;
+  const seen = (n: number, overMin: number): Observed[] =>
+    Array.from({ length: n }, (_, i) => ({ t: NOW - (i * overMin * MIN) / n, serviceId: 'D', cls: 'NORMAL' }));
+
+  it('a quiet start predicts the prior, not zero', () => {
+    expect(estimateRates([], ['D'], NOW, NOW).D.NORMAL).toBeCloseTo(prior);
+    expect(estimateRates([], ['D'], NOW, NOW).D.PRIORITY).toBeGreaterThan(0);
+  });
+
+  it('few observations stay near the prior, many approach the observed rate', () => {
+    const few = estimateRates(seen(2, 5), ['D'], NOW, NOW - 5 * MIN).D.NORMAL;
+    const many = estimateRates(seen(120, 60), ['D'], NOW, NOW - 60 * MIN).D.NORMAL;
+    expect(Math.abs(few - prior)).toBeLessThan(Math.abs(few - 2 / 5)); // closer to prior than to 0.4/min
+    expect(many).toBeGreaterThan(2 * 0.7);
+    expect(many).toBeLessThan(2);
+  });
+
+  it('ignores arrivals outside the window and before opening', () => {
+    const old = [{ t: NOW - 90 * MIN, serviceId: 'D', cls: 'NORMAL' as const }];
+    expect(estimateRates(old, ['D'], NOW, 0)).toEqual(estimateRates([], ['D'], NOW, 0));
+  });
+});
+
+describe('forecast with future arrivals', () => {
+  const zero = { EMERGENCY: 0, PRIORITY: 0, APPOINTMENT: 0, NORMAL: 0 };
+  const busy = { D: { ...zero, PRIORITY: 1.5 }, L: zero };
+  const withArrivals = (n: number, arrivals: EngineState['arrivals']) => ({ ...state(n), arrivals });
+
+  it('is deterministic for a fixed seed', () => {
+    expect(forecast(withArrivals(10, busy), NOW, { seed: 7 })).toEqual(forecast(withArrivals(10, busy), NOW, { seed: 7 }));
+  });
+
+  it('later priority arrivals push an existing normal customer later', () => {
+    const before = forecast(state(10), NOW).t6;
+    const after = forecast(withArrivals(10, busy), NOW).t6;
+    expect(after.p50).toBeGreaterThan(before.p50);
+    expect(after.p90).toBeGreaterThan(before.p90);
+  });
+
+  it('zero rates give exactly the no-arrivals result', () => {
+    expect(forecast(withArrivals(10, { D: zero, L: zero }), NOW)).toEqual(forecast(state(10), NOW));
+  });
+
+  it('phantom arrivals never appear in the result', () => {
+    const s = withArrivals(10, busy);
+    expect(Object.keys(forecast(s, NOW)).sort()).toEqual(s.waiting.map((t) => t.id).sort());
+    expect(quote(s, 'D', NOW)).not.toBeNull();
+    expect(quote(s, 'D', NOW)!.p50).toBeGreaterThan(quote(state(10), 'D', NOW)!.p50);
+  });
+
+  it('fast static-order path still matches the generic dispatcher when arrivals are inserted', () => {
+    const s = withArrivals(30, { D: { EMERGENCY: 0.05, PRIORITY: 0.5, APPOINTMENT: 0.3, NORMAL: 0.8 }, L: { ...zero, NORMAL: 0.2 } });
+    s.counters = { ...s.counters, C3: counter('C3', ['D', 'L']) };
+    s.waiting.push(tok('l', 41, { serviceId: 'L', deadline: NOW + 30 * MIN }), tok('old', 42, { creditedArrival: NOW - 40 * MIN, deadline: NOW - 25 * MIN }));
+    const generic = (st: EngineState, id: string, t: number) => POLICIES.fairline(st, id, t);
+    expect(forecast(s, NOW, { runs: 50 })).toEqual(forecast(s, NOW, { runs: 50, policy: generic }));
+  });
+
+  it('stays fast with 500 waiting tokens and arrivals', () => {
+    const s = withArrivals(500, { D: { EMERGENCY: 0.01, PRIORITY: 0.1, APPOINTMENT: 0.14, NORMAL: 0.75 }, L: zero });
+    const t0 = performance.now();
+    forecast(s, NOW);
+    const ms = performance.now() - t0;
+    console.log(`forecast(500 tokens + arrivals): ${ms.toFixed(0)} ms`);
+    expect(ms).toBeLessThan(5000);
+  });
+});
+
 describe('promise ledger', () => {
   it('records shifts above the threshold only', () => {
     const shifts = etaShifts({ a: NOW, b: NOW, c: null }, {
@@ -117,7 +187,7 @@ describe('simulation lab', () => {
   it('runs every policy on identical synthetic days', () => {
     const r = evaluate({ days: 1, runs: 10, sampleEvery: 10 });
     expect(r.synthetic).toBe(true);
-    expect(r.results.map((x) => x.id)).toEqual(['B1', 'B2', 'F', 'F-noScarcity', 'F-strictPriority', 'F-naiveEta', 'F-missBack']);
+    expect(r.results.map((x) => x.id)).toEqual(['B1', 'B2', 'F', 'F-noScarcity', 'F-strictPriority', 'F-naiveEta', 'F-missBack', 'F-noArrivals']);
     r.results.forEach((x) => expect(x.served).toBeGreaterThan(100));
   }, 60_000);
 });

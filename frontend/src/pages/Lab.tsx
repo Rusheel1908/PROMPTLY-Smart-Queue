@@ -231,9 +231,14 @@ function Verdicts({ by }: { by: Record<string, LabPolicyResult> }) {
       pass: F.promiseKept >= 0.85 && F.promiseKept <= 0.95,
       detail: `${pct(F.promiseKept)} kept. Well above 95% would mean padded promises; below 85% means over-promising.`,
     },
+    ...(by['F-noArrivals'] ? [{
+      title: 'Expecting later arrivals keeps promises',
+      pass: F.promiseKept > by['F-noArrivals'].promiseKept,
+      detail: `${pct(F.promiseKept)} kept when the forecast samples customers who have not arrived yet (rates learned from arrivals so far) vs ${pct(by['F-noArrivals'].promiseKept)} without.`,
+    }] : []),
   ] : [];
   return (
-    <div className="grid gap-4 md:grid-cols-3">
+    <div className={cx('grid gap-4 md:grid-cols-2', checks.length > 3 ? 'xl:grid-cols-4' : 'lg:grid-cols-3')}>
       {checks.map((c, i) => {
         const Icon = c.pass ? CheckCircle2 : XCircle;
         return (

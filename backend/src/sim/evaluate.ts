@@ -1,3 +1,4 @@
+import { ArrivalRates, CLASSES, estimateRates, Observed } from '../engine/arrivals.js';
 import { POLICIES } from '../engine/dispatcher.js';
 import { DurationStats, observe, posterior } from '../engine/duration.js';
 import { forecast, naiveEta } from '../engine/forecast.js';
@@ -13,7 +14,7 @@ export interface PolicySpec {
   label: string;
   group: 'baseline' | 'fairline' | 'ablation';
   pick: Policy;
-  eta: 'sim' | 'naive';
+  eta: 'sim' | 'simNoArrivals' | 'naive';
   miss: 'reenter' | 'back';
 }
 
@@ -25,6 +26,7 @@ export const SPECS: Record<string, PolicySpec> = {
   'F-strictPriority': { label: 'F + strict priority', group: 'ablation', pick: POLICIES.fairlineStrictPriority, eta: 'sim', miss: 'reenter' },
   'F-naiveEta': { label: 'F + naive ETA', group: 'ablation', pick: POLICIES.fairline, eta: 'naive', miss: 'reenter' },
   'F-missBack': { label: 'F + miss → back', group: 'ablation', pick: POLICIES.fairline, eta: 'sim', miss: 'back' },
+  'F-noArrivals': { label: 'F − arrival sampling', group: 'ablation', pick: POLICIES.fairline, eta: 'simNoArrivals', miss: 'reenter' },
 };
 
 interface Rec { a: Arrival; tok: EngineToken; predicted: number; promise: number; missCount: number; firstMissAt: number }
@@ -75,12 +77,22 @@ function simulateDay(spec: PolicySpec, arrivals: Arrival[], runs: number, sample
   let busyMs = 0;
   let seq = 0;
   let forecastSeed = seed;
+  /**
+   * Arrivals seen so far today, appended as each customer walks in. The forecaster learns
+   * rates only from this list, exactly as the live system learns from TOKEN_ISSUED events;
+   * it never sees the workload's true rates.
+   */
+  const observed: Observed[] = [];
+  const serviceIds = SIM_SERVICES.map((s) => s.id);
+
+  const simulated = (arrivals: (t: number) => ArrivalRates | undefined) => (tok: EngineToken, t: number) => {
+    const band = forecast({ ...engine, arrivals: arrivals(t) }, t, { runs, seed: forecastSeed++, policy: spec.pick })[tok.id];
+    return [band?.p50 ?? Infinity, band?.p90 ?? Infinity];
+  };
 
   const PREDICTORS = {
-    sim: (tok: EngineToken, t: number) => {
-      const band = forecast(engine, t, { runs, seed: forecastSeed++, policy: spec.pick })[tok.id];
-      return [band?.p50 ?? Infinity, band?.p90 ?? Infinity];
-    },
+    sim: simulated((t) => estimateRates(observed, serviceIds, t, 0)),
+    simNoArrivals: simulated(() => undefined),
     naive: (tok: EngineToken, t: number) => [naiveEta(engine, tok, t), naiveEta(engine, tok, t)],
     skip: () => [NaN, NaN],
   };
@@ -161,6 +173,7 @@ function simulateDay(spec: PolicySpec, arrivals: Arrival[], runs: number, sample
       deadline: a.t + TARGET[a.serviceId] * CLASS_FACTOR[a.cls],
     };
     engine.waiting.push(tok);
+    observed.push({ t: a.t, serviceId: a.serviceId, cls: a.cls });
     const sampled = i % sampleEvery === 0;
     const [predicted, p90] = PREDICTORS[sampled ? spec.eta : 'skip'](tok, a.t);
     const promise = toPromise(p90, a.t, PROMISE_MIN_LEAD_MS); // same promise rule for every policy
@@ -182,8 +195,6 @@ function simulateDay(spec: PolicySpec, arrivals: Arrival[], runs: number, sample
   const openMs = SIM_COUNTERS.length * Math.max(DAY_MS, lastT) - (OUTAGE.to - OUTAGE.from);
   return { served, noShows, busyMs, openMs };
 }
-
-const CLASSES: TokenClass[] = ['EMERGENCY', 'PRIORITY', 'APPOINTMENT', 'NORMAL'];
 
 export interface PolicyResult {
   id: string; label: string; group: PolicySpec['group'];

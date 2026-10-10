@@ -1,4 +1,6 @@
-export type TokenClass = 'EMERGENCY' | 'PRIORITY' | 'APPOINTMENT' | 'NORMAL';
+import type { ArrivalRates } from './arrivals.js';
+
+export type TokenClass ='EMERGENCY' | 'PRIORITY' | 'APPOINTMENT' | 'NORMAL';
 
 export interface EngineToken {
   id: string;
@@ -29,6 +31,8 @@ export interface EngineState {
   services: Record<string, EngineService>;
   counters: Record<string, EngineCounter>;
   waiting: EngineToken[];
+  /** Expected future arrivals; when absent the forecast replays only the current queue. */
+  arrivals?: ArrivalRates;
 }
 
 /** A dispatch policy: given the queue, which token should this counter call now? */

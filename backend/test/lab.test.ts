@@ -34,7 +34,7 @@ afterAll(async () => {
 });
 
 const SMALL = { days: 1, runs: 10, policies: ['F'] };
-const HEAVY = { days: 6, runs: 40 }; // all policies, a few seconds of CPU
+const HEAVY = { days: 3, runs: 40 }; // all policies, a few seconds of CPU (arrival sampling makes each day ~2× costlier)
 
 const start = (body: object) => request(server).post('/api/lab/run').set(PIN).send(body);
 const job = (id: string) => request(server).get(`/api/lab/jobs/${id}`).set(PIN).expect(200).then((r) => r.body);
