@@ -4,6 +4,7 @@ import * as clock from '../lib/clock.js';
 import { prisma } from '../lib/db.js';
 import { broadcast } from '../realtime.js';
 import { announce, missToken } from './actions.js';
+import { sweepAppointments } from './appointments.js';
 import { logEvent, replan, serial } from './queue.js';
 
 type Called = Token & { service: { targetWaitS: number }; counter: { name: string } | null };
@@ -28,12 +29,16 @@ export async function sweepCalls() {
   for (const t of expired) await ON_EXPIRY[Math.min(t.recallCount, 1)](t);
 }
 
-/** Background loops: call-window enforcement every 5 s, re-forecast every 30 s as time passes. Returns a stop function. */
+/**
+ * Background loops: call-window enforcement every 5 s; every 30 s, appointment reminders and no-shows, and a
+ * re-forecast as time passes. Returns a stop function.
+ */
 export function startSweeper() {
   const safely = (fn: () => Promise<unknown>) => () => { serial(fn).catch((e) => console.error('[sweeper]', e)); };
   const timers = [
     setInterval(safely(sweepCalls), 5_000),
     setInterval(safely(() => replan('Services running longer or shorter than expected', undefined, 3 * MIN)), 30_000),
+    setInterval(safely(sweepAppointments), 30_000),
   ];
   safely(() => replan('Server started'))();
   /** Stop the loops, then wait for work already queued so it does not outlive the database connection. */

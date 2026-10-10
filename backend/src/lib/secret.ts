@@ -4,6 +4,10 @@ import { promisify } from 'node:util';
 /** Per-token access key carried in the customer's QR link: 24 random bytes, base64url (32 chars). */
 export const newTokenSecret = () => randomBytes(24).toString('base64url');
 
+/** Booking code typed at the kiosk: "BK-" + 6 characters without look-alikes (no 0/O, 1/I). 32^6 ≈ 1 billion. */
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+export const newBookingCode = () => `BK-${[...randomBytes(6)].map((b) => CODE_ALPHABET[b % 32]).join('')}`;
+
 const digest = (s: string) => createHash('sha256').update(s).digest();
 
 /** Constant-time string comparison. Hashing first gives equal-length buffers, so length is not leaked either. */

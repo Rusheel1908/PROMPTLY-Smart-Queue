@@ -15,6 +15,15 @@ export type AppointmentConfig = typeof APPOINTMENT_CONFIG;
 
 export type CheckInPhase = 'EARLY' | 'ON_TIME' | 'LATE';
 
+/** What a checked-in token's status page says about its booking (Prisma's AppointmentStatus values). */
+export const APPOINTMENT_NOTE: Record<string, string | null> = {
+  BOOKED: null,
+  CHECKED_IN: 'Checked in for your appointment',
+  LATE_DOWNGRADED: 'Arrived after your check-in window',
+  NO_SHOW: null,
+  CANCELLED: null,
+};
+
 export const checkInWindow = (slotStart: number, cfg = APPOINTMENT_CONFIG) => ({
   opensAt: slotStart - cfg.checkIn.opensBeforeMs,
   closesAt: slotStart + cfg.checkIn.closesAfterMs,

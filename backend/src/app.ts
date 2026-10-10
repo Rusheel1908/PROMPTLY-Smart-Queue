@@ -6,6 +6,7 @@ import { config, LIMITS } from './config.js';
 import { fail, HttpError } from './lib/http.js';
 import { authRouter } from './routes/auth.js';
 import { countersRouter } from './routes/counters.js';
+import { appointmentsRouter } from './routes/appointments.js';
 import { opsRouter } from './routes/ops.js';
 import { tokensRouter } from './routes/tokens.js';
 
@@ -22,6 +23,7 @@ export function createApp() {
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
   app.use('/api/auth', authRouter);
   app.use('/api/tokens', tokensRouter);
+  app.use('/api/appointments', appointmentsRouter);
   app.use('/api/counters', countersRouter);
   app.use('/api', opsRouter);
   app.use('/api', () => fail(404, 'Not found'));
@@ -29,7 +31,7 @@ export function createApp() {
   /** First matching rule decides the response. */
   const ERROR_RULES: [(e: unknown) => boolean, (e: any) => [number, object]][] = [
     [(e) => e instanceof ZodError, (e: ZodError) => [400, { error: 'Invalid request', issues: e.issues }]],
-    [(e) => e instanceof HttpError, (e: HttpError) => [e.status, { error: e.message }]],
+    [(e) => e instanceof HttpError, (e: HttpError) => [e.status, { error: e.message, ...e.details }]],
     [isClientHttpError, (e) => [e.status, { error: e.message }]],
     [() => true, (e) => (console.error(e), [500, { error: 'Internal error' }])],
   ];

@@ -32,7 +32,14 @@ describe('issuing', () => {
     expect(r.body.issues[0].path).toEqual(['class']);
   });
 
-  it.each(['PRIORITY', 'EMERGENCY', 'APPOINTMENT'])('%s from the kiosk without a staff session → 403', async (cls) => {
+  it('APPOINTMENT is never issued directly, not even by staff: only a booking check-in gives it → 400', async () => {
+    const msg = { error: 'Appointments check in with their booking code' };
+    await kiosk({ serviceId: world.deposits.id, class: 'APPOINTMENT' }).expect(400, msg);
+    await kiosk({ serviceId: world.deposits.id, class: 'APPOINTMENT' }).set(as()).expect(400, msg);
+    expect(await prisma.token.count()).toBe(0);
+  });
+
+  it.each(['PRIORITY', 'EMERGENCY'])('%s from the kiosk without a staff session → 403', async (cls) => {
     await kiosk({ serviceId: world.deposits.id, class: cls })
       .expect(403, { error: 'Priority classes must be verified by staff' });
     await kiosk({ serviceId: world.deposits.id, class: cls }).set({ 'x-staff-pin': '1234' }).expect(403);

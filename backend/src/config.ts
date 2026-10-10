@@ -11,6 +11,9 @@ export const RATE_LIMITS = {
   tokenDetailPerKey: { max: 120, windowMs: MINUTE }, // per token: reads with its valid QR key, so phones sharing one Wi-Fi IP never starve each other
   tokenAction: { max: 20, windowMs: MINUTE },
   login: { max: 20, windowMs: 15 * MINUTE }, // failed staff logins per IP, so PINs cannot be brute-forced
+  slots: { max: 60, windowMs: MINUTE }, // booking page slot lists
+  book: { max: 10, windowMs: 15 * MINUTE }, // new bookings per IP
+  bookingCode: { max: 10, windowMs: 15 * MINUTE }, // wrong booking codes at the kiosk per IP, so codes cannot be guessed
 } as const;
 
 /** Staff sessions and the per-account lockout. */

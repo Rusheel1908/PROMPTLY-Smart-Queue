@@ -19,6 +19,9 @@ export const PERMISSIONS = {
   'issue-priority': ANY, // set a priority class at the kiosk
   'view-token': ANY, // open any customer's status without their key
   reactivate: SUPERVISOR,
+  // appointments
+  'view-appointments': ANY, // today's bookings list
+  'cancel-appointment': ANY, // cancel a booking that has not checked in
   // supervisor
   'counter-update': SUPERVISOR, // open / pause / close / skills
   whatif: SUPERVISOR,

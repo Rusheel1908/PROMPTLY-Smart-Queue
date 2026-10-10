@@ -9,6 +9,7 @@ import { applySuggestion, getSuggestions } from '../services/suggestions.js';
 import { metrics, snapshot, SNAPSHOT_VIEWS } from '../services/queue.js';
 import { staffStats } from '../services/staffStats.js';
 import { pushPublicKey } from '../services/push.js';
+import { todaysAppointments } from '../services/appointments.js';
 
 export const opsRouter = Router();
 
@@ -39,6 +40,8 @@ opsRouter.get('/ops/suggestions', requireRole('view-suggestions'), handle(() => 
 opsRouter.post('/ops/suggestions/:id/apply', requireRole('apply-suggestion'), handle((req) => applySuggestion(req.params.id, actor(req))));
 /** Miss audit: today's calls, completes and misses per staff member, with outliers flagged. */
 opsRouter.get('/ops/staff-stats', requireRole('staff-stats'), handle(() => staffStats()));
+/** Today's bookings with a count per status. */
+opsRouter.get('/ops/appointments', requireRole('view-appointments'), handle(() => todaysAppointments()));
 opsRouter.post('/demo/spawn', requireRole('demo'), handle(async (req) => spawnDemo(Spawn.parse(req.body ?? {}).count)));
 opsRouter.post('/demo/reset', requireRole('demo'), handle((req) => resetDemo(actor(req))));
 

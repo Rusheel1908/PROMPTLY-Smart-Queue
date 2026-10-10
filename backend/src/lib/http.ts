@@ -13,12 +13,12 @@ declare global {
 }
 
 export class HttpError extends Error {
-  constructor(public status: number, message: string) { super(message); }
+  constructor(public status: number, message: string, public details?: Record<string, unknown>) { super(message); }
 }
 
-/** Throw an HTTP error. Typed `never` so it works in expressions: `x ?? fail(404, '...')`. */
-export function fail(status: number, message: string): never {
-  throw new HttpError(status, message);
+/** Throw an HTTP error. Typed `never` so it works in expressions: `x ?? fail(404, '...')`. Details join the JSON body. */
+export function fail(status: number, message: string, details?: Record<string, unknown>): never {
+  throw new HttpError(status, message, details);
 }
 
 /** Assert a condition or fail with an HTTP error. */
@@ -36,9 +36,15 @@ const TOO_MANY = 'Too many requests, please slow down';
 type Bucket = (req: Request) => string;
 const byIp: Bucket = (req) => req.ip ?? 'unknown';
 
+/** Every limiter's hit log, so tests can start each case with fresh limits. */
+const allHits = new Set<Map<string, number[]>>();
+/** Tests only: forget every recorded hit. */
+export const resetRateLimits = () => allHits.forEach((h) => h.clear());
+
 /** Hit log for a fixed window, one entry per bucket (the client IP unless given). */
 function hitLog({ windowMs }: Limit, bucket: Bucket = byIp) {
   const hits = new Map<string, number[]>();
+  allHits.add(hits);
   const recent = (req: Request) => (hits.get(bucket(req)) ?? []).filter((t) => Date.now() - t < windowMs);
   const add = (req: Request) => hits.set(bucket(req), [...recent(req), Date.now()]);
   return { recent, add };
@@ -72,6 +78,23 @@ export const loadStaff: RequestHandler = (req, _res, next) => {
   req.bearer = bearerOf(req);
   sessionFor(req.bearer).then((s) => { req.staff = s?.staff; next(); }).catch(next);
 };
+
+/**
+ * Routes for the holder of a secret link (a token or booking key): limited per resource when the key is right, so
+ * phones sharing one IP never starve each other, per IP otherwise (so guessing stays capped); then 404 unless the
+ * caller holds the key or `alsoAllow` says so.
+ */
+export function keyHolder(
+  holds: (req: Request) => Promise<boolean>, perKey: RequestHandler, perIp: RequestHandler, alsoAllow: (req: Request) => boolean = () => false,
+): RequestHandler {
+  return (req, res, next) => {
+    holds(req).then((holder) => (holder ? perKey : perIp)(req, res, (err?: unknown) => {
+      if (err) return next(err);
+      must(holder || alsoAllow(req), 404, 'Not found');
+      next();
+    })).catch(next);
+  };
+}
 
 /** Staff routes: 401 without a live session, 403 when the PERMISSIONS table does not allow the caller's role. */
 export const requireRole = (action: Action): RequestHandler => (req, res, next) =>

@@ -31,6 +31,8 @@ const ownerOrStaff: RequestHandler = (req, _res, next) => {
 
 tokensRouter.post('/', rateLimit(RATE_LIMITS.issueToken), loadStaff, handle(async (req) => {
   const body = CreateToken.parse(req.body);
+  // appointments come only from checking in a booking (its window decides the class)
+  must(body.class !== 'APPOINTMENT', 400, 'Appointments check in with their booking code');
   // priority classes are set or verified by staff, never self-selected at the kiosk
   must(body.class === 'NORMAL' || staffMay(req, 'issue-priority'), 403, 'Priority classes must be verified by staff');
   return issueToken(body.serviceId, body.class, req.staff?.id ?? 'kiosk');

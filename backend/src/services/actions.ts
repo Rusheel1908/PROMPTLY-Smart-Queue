@@ -1,4 +1,5 @@
-import type { CounterStatus, Token, TokenClass } from '@prisma/client';
+import type { CounterStatus, Service, Token, TokenClass } from '@prisma/client';
+import { APPOINTMENT_NOTE, bookableSlots, slotMinutes } from '../engine/appointments.js';
 import { restoreDemoDataset } from '../demo/dataset.js';
 import { explainPick, pickNext } from '../engine/dispatcher.js';
 import { observe } from '../engine/duration.js';
@@ -11,7 +12,7 @@ import {
 import * as clock from '../lib/clock.js';
 import { prisma } from '../lib/db.js';
 import { fail, must } from '../lib/http.js';
-import { newTokenSecret, safeEqual } from '../lib/secret.js';
+import { newBookingCode, newTokenSecret, safeEqual } from '../lib/secret.js';
 import { broadcast } from '../realtime.js';
 import { recentNotifications } from './notifier.js';
 import {
@@ -48,19 +49,34 @@ const guard = (t: Token, action: Action) =>
 
 export const issueToken = (serviceId: string, cls: TokenClass, actor = 'kiosk') => serial(async () => {
   const service = (await prisma.service.findUnique({ where: { id: serviceId } })) ?? fail(404, 'Unknown service');
-  const count = await prisma.token.count({ where: { serviceId } });
+  return admitToken(service, cls, { actor });
+});
+
+export interface Admission {
+  actor: string;
+  deadline?: number; // default: now + the service's target wait for this class
+  appointmentId?: string; // checked in from a booking (kept out of the observed walk-in rates)
+  reason?: string; // for the replan's ETA changes
+  beforeReplan?: (tokenId: string) => Promise<unknown>; // e.g. mark the booking checked in, so the replan does not count it twice
+}
+
+/** Create a waiting token, log it, replan, and freeze its promise. The one way a token enters the queue; call inside serial(). */
+export async function admitToken(service: Service, cls: TokenClass, a: Admission) {
+  const count = await prisma.token.count({ where: { serviceId: service.id } });
   const now = clock.now();
   const token = await prisma.token.create({
     data: {
       code: `${service.prefix}-${String(count + 1).padStart(3, '0')}`,
-      serviceId, class: cls, secret: newTokenSecret(),
+      serviceId: service.id, class: cls, secret: newTokenSecret(),
       // same clock as the deadline (not the database default), so arrival credit and deadline agree
       arrivedAt: new Date(now), creditedArrival: new Date(now), notBefore: new Date(now),
-      deadline: new Date(now + service.targetWaitS * 1000 * CLASS_FACTOR[cls]),
+      deadline: new Date(a.deadline ?? now + service.targetWaitS * 1000 * CLASS_FACTOR[cls]),
     },
   });
-  const seq = await logEvent('TOKEN_ISSUED', { tokenId: token.id, payload: { class: cls, service: service.name, serviceId }, actor });
-  const bands = await replan(JOIN_REASON[cls], seq);
+  await a.beforeReplan?.(token.id);
+  const payload = { class: cls, service: service.name, serviceId: service.id, ...(a.appointmentId && { appointmentId: a.appointmentId }) };
+  const seq = await logEvent('TOKEN_ISSUED', { tokenId: token.id, payload, actor: a.actor });
+  const bands = await replan(a.reason ?? JOIN_REASON[cls], seq);
   const p90 = bands[token.id]?.p90;
   // the P90 at issue time is frozen as this customer's promise (none when no counter can serve)
   const saved = await prisma.token.update({
@@ -69,7 +85,7 @@ export const issueToken = (serviceId: string, cls: TokenClass, actor = 'kiosk') 
   });
   // the only response that carries the secret: it becomes the customer's QR link
   return { ...publicToken(saved, now, {}), serviceName: service.name, secret: saved.secret };
-});
+}
 
 /** True only for the holder of this token's QR link. A missing token answers the same as a wrong key. */
 export async function holdsToken(id: string, key: string | undefined) {
@@ -81,7 +97,10 @@ export async function tokenDetail(id: string) {
   const now = clock.now();
   const token = (await prisma.token.findUnique({
     where: { id },
-    include: { service: true, counter: true, etaChanges: { orderBy: { ts: 'desc' }, take: 20 } },
+    include: {
+      service: true, counter: true, etaChanges: { orderBy: { ts: 'desc' }, take: 20 },
+      appointment: { select: { slotStart: true, status: true } },
+    },
   })) ?? fail(404, 'Token not found');
   const [waiting, child, notifications] = await Promise.all([
     prisma.token.findMany({ where: { state: 'WAITING', etaP50: { not: null } }, select: { id: true, etaP50: true } }),
@@ -99,6 +118,7 @@ export async function tokenDetail(id: string) {
     // the caller proved access to the parent, so they may follow the redirect
     child: child && { id: child.id, code: child.code, key: child.secret },
     notifications, // newest first; the status page alerts on ids it has not seen yet
+    appointment: token.appointment && { slotStart: token.appointment.slotStart, status: token.appointment.status, note: APPOINTMENT_NOTE[token.appointment.status] },
   };
 }
 
@@ -339,8 +359,19 @@ export async function spawnDemo(count: number) {
   return { issued: issued.map((t) => t.code) };
 }
 
+/** DEMO DATA (labeled): one Deposits booking in the next slot at least 20 min away, for the Ops list and the reminder. */
+async function bookDemoAppointment(tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) {
+  const deposits = await tx.service.findUnique({ where: { prefix: 'D' } });
+  const now = clock.now();
+  const slot = deposits && bookableSlots(now, slotMinutes('D')).find((t) => t >= now + 20 * MIN);
+  slot && await tx.appointment.create({
+    data: { code: newBookingCode(), secret: newTokenSecret(), serviceId: deposits.id, slotStart: new Date(slot) },
+  });
+}
+
 export const resetDemo = (actor: string) => serial(async () => {
   await prisma.$transaction(async (tx) => {
+    await tx.appointment.deleteMany();
     await tx.etaChange.deleteMany();
     await tx.token.deleteMany();
     await tx.event.deleteMany();
@@ -348,6 +379,7 @@ export const resetDemo = (actor: string) => serial(async () => {
     await restoreDemoDataset(tx); // skills changed during a demo (e.g. an applied suggestion) go back to the seeded layout
     // demos must be repeatable, so forget learned service times; supervisor-only demo action, a real branch never runs it
     await tx.service.updateMany({ data: { obsN: 0, obsMean: 0, obsM2: 0 } });
+    await bookDemoAppointment(tx);
   });
   await logEvent('DEMO_RESET', { actor });
   await replan('Demo reset');

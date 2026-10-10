@@ -43,7 +43,7 @@ async function seedStaff() {
 export async function resetDb() {
   await flushNotifications(); // the last test's background notifications must not land in this one's database
   await prisma.$executeRawUnsafe(
-    'TRUNCATE "NotificationLog", "PushSubscription", "EtaChange", "Event", "Token", "CounterSkill", "Counter", "Service", "Session", "Staff" RESTART IDENTITY CASCADE',
+    'TRUNCATE "Appointment", "NotificationLog", "PushSubscription", "EtaChange", "Event", "Token", "CounterSkill", "Counter", "Service", "Session", "Staff" RESTART IDENTITY CASCADE',
   );
   const [deposits, loans] = await Promise.all([
     prisma.service.create({ data: { prefix: 'D', name: 'Deposits', targetWaitS: 900, priorMu: Math.log(4), priorSigma: 0.5 } }),
