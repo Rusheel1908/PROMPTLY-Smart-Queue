@@ -7,6 +7,19 @@ import type { NotifyEvent, TokenNotification } from '../lib/types';
 
 /** Older notifications are shown on open only if this recent; anything older is history, not news. */
 const FRESH_ON_OPEN_MS = 15 * 60_000;
+/** Notifications this close together are one piece of news. */
+const SAME_NEWS_MS = 60_000;
+
+/**
+ * The one to show (list newest first): the newest, unless an urgent one came with it. "You missed your turn" must not
+ * be hidden by the routine "You're almost up" that the same miss triggers a second later.
+ */
+const headline = (list: TokenNotification[]) => {
+  const newest = list[0];
+  if (!newest) return null;
+  const sameNews = list.filter((n) => Date.parse(newest.ts) - Date.parse(n.ts) <= SAME_NEWS_MS);
+  return sameNews.find((n) => n.urgency === 'high') ?? newest;
+};
 
 /**
  * The banner shows the newest notification of a token or a booking. Ones already there when the page opened appear
@@ -24,17 +37,18 @@ export function useNotificationBanner(owner: { id: string; notifications: TokenN
     const list = owner.notifications ?? [];
     if (seen.current?.ownerId !== owner.id) { // first load of this token or booking: nothing is new yet
       seen.current = { ownerId: owner.id, ids: new Set(list.map((n) => n.id)) };
-      const latest = list[0];
-      setShown(latest && Date.now() - new Date(latest.ts).getTime() < FRESH_ON_OPEN_MS ? latest : null);
+      const latest = headline(list);
+      setShown(latest && Date.now() - new Date(list[0].ts).getTime() < FRESH_ON_OPEN_MS ? latest : null);
       setLive(false);
       return;
     }
     const fresh = list.filter((n) => !seen.current!.ids.has(n.id));
     if (fresh.length === 0) return;
     fresh.forEach((n) => seen.current!.ids.add(n.id));
-    setShown(fresh[0]);
+    const news = headline(fresh)!;
+    setShown(news);
     setLive(true);
-    mutedRef.current || alertUser(fresh[0].urgency);
+    mutedRef.current || alertUser(news.urgency);
   }, [owner]);
 
   return { shown, live, dismiss: () => setShown(null) };

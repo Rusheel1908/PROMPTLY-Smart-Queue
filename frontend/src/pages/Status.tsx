@@ -198,7 +198,13 @@ function Waiting({ t, now, reload, call }: PanelProps) {
           )}
         </>
       )}
-      {steppedAway && <div className="flex items-center gap-2 rounded-xl bg-card p-3 text-sm"><Coffee className="size-4" /> You're away. We won't call you before {fmtClock(t.notBefore)}.</div>}
+      {steppedAway && (t.missCount > 0 ? (
+        <div className="flex items-center gap-2 rounded-xl bg-orange-50 p-3 text-sm text-orange-900">
+          <PhoneMissed className="size-4 shrink-0" /> You missed your call. You keep a place near the front: we'll call you again from {fmtClock(t.notBefore)}.
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 rounded-xl bg-card p-3 text-sm"><Coffee className="size-4" /> You're away. We won't call you before {fmtClock(t.notBefore)}.</div>
+      ))}
       <div className="flex gap-2">
         <Button variant="ghost" icon={Coffee} className="flex-1" onClick={() => setAwayOpen(true)}>I'm stepping away</Button>
         <Button variant="ghost" icon={XCircle} onClick={() => setConfirmCancel(true)}>Cancel</Button>

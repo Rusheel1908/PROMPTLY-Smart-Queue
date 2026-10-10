@@ -236,7 +236,7 @@ function WindowRing({ left }: { left: number }) {
       <svg viewBox="0 0 80 80" className="absolute inset-0 -rotate-90">
         <circle cx="40" cy="40" r={r} fill="none" stroke="var(--color-line)" strokeWidth="6" />
         <motion.circle cx="40" cy="40" r={r} fill="none" stroke={color} strokeWidth="6" strokeLinecap="round"
-          strokeDasharray={c} animate={{ strokeDashoffset: c * (1 - frac) }} transition={{ duration: 0.9, ease: 'linear' }} />
+          strokeDasharray={c} initial={false} animate={{ strokeDashoffset: c * (1 - frac) }} transition={{ duration: 0.9, ease: 'linear' }} />
       </svg>
       <div className="text-center">
         <div className="tabular text-xl font-bold">{Math.ceil(left)}s</div>
