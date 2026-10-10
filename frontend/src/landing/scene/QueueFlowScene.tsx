@@ -4,13 +4,13 @@ import { MathUtils, PerspectiveCamera } from 'three';
 import { LANDING } from '../config';
 import { Gates } from './Gates';
 import { Kiosk } from './Kiosk';
-import { buildLanes } from './paths';
-import { GateField } from './simulation';
+import { buildLanes, buildMissLoops } from './paths';
+import { GateCycle, GateField } from './simulation';
 import { TokenParticles } from './TokenParticles';
 
 const CAM = LANDING.camera;
 /** World-space box the camera keeps in frame, whatever the container's shape. */
-const FRAME = { width: 16.4, height: 9.2, centerX: -0.7, centerY: -0.3 };
+const FRAME = { width: 15.8, height: 10, centerX: -0.5, centerY: -0.2 };
 
 /** Pulls the camera back far enough that the whole scene fits the container (wide desktop band or narrow phone strip). */
 function CameraRig() {
@@ -28,15 +28,21 @@ function CameraRig() {
 
 function Flow({ mobile }: { mobile: boolean }) {
   const lanes = useMemo(buildLanes, []);
+  const loops = useMemo(() => buildMissLoops(lanes), [lanes]);
   const gates = useMemo(() => new GateField(LANDING.gates.length), []);
+  const cycle = useMemo(() => new GateCycle(), []);
   const cap = mobile ? LANDING.particles.mobile : LANDING.particles.desktop;
   const target = useRef(cap * 0.85);
-  useFrame((_, dt) => gates.update(Math.min(dt, 1 / 20)));
+  useFrame((_, delta) => {
+    const dt = Math.min(delta, 1 / 20);
+    cycle.update(dt, gates); // demo: one gate closes every ~10 s, then reopens
+    gates.update(dt);
+  });
   return (
     <>
       <Kiosk />
       <Gates gates={gates} lanes={lanes} />
-      <TokenParticles lanes={lanes} gates={gates} cap={cap} target={target} />
+      <TokenParticles lanes={lanes} loops={loops} gates={gates} cap={cap} target={target} />
     </>
   );
 }

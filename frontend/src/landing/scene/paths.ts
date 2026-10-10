@@ -32,9 +32,37 @@ export type Lane = ReturnType<typeof buildLanes>[number];
 
 /** Position at progress t (0–1) on a lane, linearly interpolated from the spaced point table. */
 export function sampleLane(lane: Lane, t: number, out: Vector3): Vector3 {
-  const pts = lane.points;
+  return samplePoints(lane.points, t, out);
+}
+
+/** Where a missed token rejoins its lane: near the front of the queue, not the back. */
+export const REENTRY_T = 0.74;
+
+/**
+ * Missed turn: from the gate, a wide arc outward (above the lane for upper gates, below for lower ones)
+ * that swings back to a grace spot beside the front of the queue.
+ */
+export function buildMissLoops(lanes: Lane[]) {
+  return lanes.map((lane) => {
+    const g = lane.points[lane.points.length - 1];
+    const side = g.y > 0.3 ? 1 : -1;
+    const grace = sampleLane(lane, 0.56, new Vector3()).add(new Vector3(0, side * 1.25, 0.5));
+    const curve = new CatmullRomCurve3([
+      g.clone(),
+      new Vector3(g.x + 1.1, g.y + side * 0.8, g.z + 0.4),
+      new Vector3(g.x - 0.4, g.y + side * 2.1, g.z + 1.0),
+      new Vector3((g.x + grace.x) / 2, grace.y + side * 0.75, grace.z + 0.4),
+      grace.clone(),
+    ], false, 'centripetal');
+    return { points: curve.getSpacedPoints(120), grace, rejoin: sampleLane(lane, REENTRY_T, new Vector3()) };
+  });
+}
+
+export type MissLoop = ReturnType<typeof buildMissLoops>[number];
+
+/** Same lookup-table sampling as sampleLane, for any point list. */
+export function samplePoints(pts: Vector3[], t: number, out: Vector3): Vector3 {
   const f = Math.min(Math.max(t, 0), 1) * (pts.length - 1);
   const i = Math.floor(f);
-  const j = Math.min(i + 1, pts.length - 1);
-  return out.lerpVectors(pts[i], pts[j], f - i);
+  return out.lerpVectors(pts[i], pts[Math.min(i + 1, pts.length - 1)], f - i);
 }

@@ -46,9 +46,9 @@ export function Gates({ gates, lanes }: { gates: GateField; lanes: Lane[] }) {
   useFrame(() => {
     parts.forEach((p, i) => {
       const o = gates.openness[i];
-      p.ring.color.lerpColors(CLOSED, OPEN, o);
+      p.ring.color.lerpColors(CLOSED, OPEN, o).multiplyScalar(1 + 0.8 * gates.flash[i]); // flash as a token is served
       p.ring.opacity = 0.55 + 0.45 * o;
-      p.halo.opacity = 0.12 * o;
+      p.halo.opacity = (0.12 + 0.25 * gates.flash[i]) * o;
       p.label.color.lerpColors(LABEL_CLOSED, LABEL_OPEN, o);
       (p.lane.material as LineBasicMaterial).opacity = 0.03 + 0.08 * o;
       groups.current[i]?.scale.setScalar(0.86 + 0.14 * o);
