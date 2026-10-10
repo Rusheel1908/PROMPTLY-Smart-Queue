@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { prisma } from '../lib/db.js';
-import { broadcast } from '../realtime.js';
+import { handle, isStaff, must, rateLimit, requireStaff } from '../lib/http.js';
+import { cancelToken, issueToken, reactivate, stepAway, tokenDetail } from '../services/actions.js';
 
 export const tokensRouter = Router();
 
@@ -9,37 +9,16 @@ const CreateToken = z.object({
   serviceId: z.string().min(1),
   class: z.enum(['EMERGENCY', 'PRIORITY', 'APPOINTMENT', 'NORMAL']).default('NORMAL'),
 });
+const Away = z.object({ minutes: z.number().int().min(1).max(30).default(5) });
 
-const FACTOR = { EMERGENCY: 0.05, PRIORITY: 0.3, APPOINTMENT: 0.2, NORMAL: 1 } as const;
+tokensRouter.post('/', rateLimit(30, 60_000), handle(async (req) => {
+  const body = CreateToken.parse(req.body);
+  // priority classes are set or verified by staff, never self-selected at the kiosk
+  must(body.class === 'NORMAL' || isStaff(req), 403, 'Priority classes must be verified by staff');
+  return issueToken(body.serviceId, body.class, isStaff(req) ? 'staff' : 'kiosk');
+}, 201));
 
-tokensRouter.post('/', async (req, res, next) => {
-  try {
-    const body = CreateToken.parse(req.body);
-    const service = await prisma.service.findUnique({ where: { id: body.serviceId } });
-    if (!service) return res.status(404).json({ error: 'Unknown service' });
-    const count = await prisma.token.count({ where: { serviceId: service.id } });
-    const now = new Date();
-    const token = await prisma.token.create({
-      data: {
-        code: `${service.prefix}-${String(count + 1).padStart(3, '0')}`,
-        serviceId: service.id,
-        class: body.class,
-        deadline: new Date(now.getTime() + service.targetWaitS * 1000 * FACTOR[body.class]),
-      },
-    });
-    await prisma.event.create({ data: { type: 'TOKEN_ISSUED', tokenId: token.id, payload: { class: body.class } } });
-    broadcast('token:issued', token);
-    res.status(201).json(token);
-  } catch (e) { next(e); }
-});
-
-tokensRouter.get('/:id', async (req, res, next) => {
-  try {
-    const token = await prisma.token.findUnique({
-      where: { id: req.params.id },
-      include: { service: true, etaChanges: { orderBy: { ts: 'desc' } } },
-    });
-    if (!token) return res.status(404).json({ error: 'Not found' });
-    res.json(token);
-  } catch (e) { next(e); }
-});
+tokensRouter.get('/:id', rateLimit(120, 60_000), handle((req) => tokenDetail(req.params.id)));
+tokensRouter.post('/:id/away', rateLimit(20, 60_000), handle((req) => stepAway(req.params.id, Away.parse(req.body ?? {}).minutes)));
+tokensRouter.post('/:id/cancel', rateLimit(20, 60_000), handle((req) => cancelToken(req.params.id)));
+tokensRouter.post('/:id/reactivate', requireStaff, handle((req) => reactivate(req.params.id, 'staff')));

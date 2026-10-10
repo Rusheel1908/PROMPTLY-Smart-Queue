@@ -35,9 +35,13 @@ model Service {
   id          String         @id @default(cuid())
   name        String
   prefix      String         @unique
+  icon        String         @default("circle")
   targetWaitS Int
-  priorMu     Float
-  priorSigma  Float
+  priorMu     Float // log-mean of service minutes (configured prior)
+  priorSigma  Float // log-sd of service minutes (configured prior)
+  obsN        Int            @default(0) // online log-duration stats (Welford)
+  obsMean     Float          @default(0)
+  obsM2       Float          @default(0)
   skills      CounterSkill[]
   tokens      Token[]
 }
@@ -53,27 +57,37 @@ model Counter {
 model CounterSkill {
   counterId String
   serviceId String
-  counter   Counter @relation(fields: [counterId], references: [id])
-  service   Service @relation(fields: [serviceId], references: [id])
+  counter   Counter @relation(fields: [counterId], references: [id], onDelete: Cascade)
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 
   @@id([counterId, serviceId])
 }
 
 model Token {
-  id              String     @id @default(cuid())
+  id              String      @id @default(cuid())
+  seq             Int         @default(autoincrement())
   code            String
   serviceId       String
-  service         Service    @relation(fields: [serviceId], references: [id])
-  class           TokenClass @default(NORMAL)
-  state           TokenState @default(WAITING)
-  arrivedAt       DateTime   @default(now())
-  creditedArrival DateTime   @default(now())
+  service         Service     @relation(fields: [serviceId], references: [id])
+  class           TokenClass  @default(NORMAL)
+  state           TokenState  @default(WAITING)
+  arrivedAt       DateTime    @default(now())
+  creditedArrival DateTime    @default(now())
   deadline        DateTime
-  notBefore       DateTime   @default(now())
-  missCount       Int        @default(0)
+  notBefore       DateTime    @default(now())
+  missCount       Int         @default(0)
+  recallCount     Int         @default(0)
+  redirectDepth   Int         @default(0)
   promiseP90      DateTime?
+  etaP50          DateTime?
+  etaP90          DateTime?
+  calledAt        DateTime?
+  lastCallAt      DateTime?
+  servedAt        DateTime?
+  doneAt          DateTime?
+  pickReason      String?
   counterId       String?
-  counter         Counter?   @relation(fields: [counterId], references: [id])
+  counter         Counter?    @relation(fields: [counterId], references: [id])
   parentTokenId   String?
   etaChanges      EtaChange[]
 
@@ -93,7 +107,7 @@ model Event {
 model EtaChange {
   id         Int      @id @default(autoincrement())
   tokenId    String
-  token      Token    @relation(fields: [tokenId], references: [id])
+  token      Token    @relation(fields: [tokenId], references: [id], onDelete: Cascade)
   ts         DateTime @default(now())
   deltaS     Int
   reason     String
