@@ -17,6 +17,7 @@ wait ceiling (no starvation). Every token's call time is **forecast by replaying
    npm run db:seed         # demo branch: 4 services, 5 counters (labeled demo data)
    npm run dev             # http://localhost:4000/api/health
    npm test                # engine tests + API tests (API tests use a separate promptly_test DB, created automatically)
+   npm run lab:snapshot    # optional: regenerate src/sim/precomputed.json (the Lab's saved 30-day result, ~15 s)
    ```
 3. Frontend (second terminal)
    ```
@@ -46,13 +47,13 @@ staff PIN; anything else gets a 404. Without the PIN, `/api/snapshot` and the We
 | `/counter` | Staff | Call next with "why this customer", call-window ring, recall / missed / redirect, keyboard shortcuts |
 | `/board` | Display | Now calling with chime + voice, counters, up next |
 | `/ops` | Supervisor | KPIs, promise-risk heatmap, what-if planner (simulate, then apply), live event log, demo tools |
-| `/lab` | Anyone | Simulation lab: B1, B2, Fairline + 4 ablations on identical synthetic days |
+| `/lab` | Anyone (view) / Staff (run live) | Simulation lab: B1, B2, Fairline + 4 ablations on identical synthetic days. Opens on a saved pre-computed result; live runs execute in a worker thread, one at a time, 60 s limit |
 
 ## Layout
 ```
 backend/src/engine/   pure TS: dispatcher (policies + fast path), forecaster, duration model, state machine, ledger
-backend/src/sim/      synthetic workload + discrete-event evaluator (baselines, ablations)
-backend/src/services/ queue (load/replan/snapshot), actions (all mutations, serialized), sweeper (auto recall/miss)
+backend/src/sim/      synthetic workload + discrete-event evaluator (baselines, ablations), Lab worker entry, saved snapshot
+backend/src/services/ queue (load/replan/snapshot), actions (all mutations, serialized), sweeper (auto recall/miss), lab jobs (worker threads)
 backend/src/routes/   tokens (public, rate-limited), counters (staff), ops (snapshot, what-if, demo, lab)
 frontend/src/pages/   Kiosk, Status, Counter, Board, Ops, Lab
 ```
