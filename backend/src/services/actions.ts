@@ -13,7 +13,7 @@ import { fail, must } from '../lib/http.js';
 import { newTokenSecret, safeEqual } from '../lib/secret.js';
 import { broadcast } from '../realtime.js';
 import {
-  CounterOverride, FORECAST_RUNS, loadWorld, logEvent, publicToken, replan, serial, toEngine,
+  CounterOverride, FORECAST_RUNS, loadWorld, logEvent, publicToken, queueSignals, replan, serial, toEngine,
 } from './queue.js';
 
 const JOIN_REASON: Record<TokenClass, string> = {
@@ -258,7 +258,12 @@ export const redirect = (counterId: string, serviceId: string, actor: string) =>
   return { ok: true, child: { id: child.id, code: child.code } };
 });
 
-export const updateCounter = (id: string, change: { status?: CounterStatus; skills?: string[] }, actor: string) => serial(async () => {
+export type CounterChange = { status?: CounterStatus; skills?: string[] };
+
+export const updateCounter = (id: string, change: CounterChange, actor: string) => serial(() => changeCounter(id, change, actor));
+
+/** The one counter-update path (also used by applied suggestions). Call inside serial(). */
+export async function changeCounter(id: string, change: CounterChange, actor: string) {
   const counter = await getCounter(id);
   const skills = change.skills && [...new Set(change.skills)];
   skills && must(await prisma.service.count({ where: { id: { in: skills } } }) === skills.length, 404, 'Unknown service');
@@ -284,8 +289,9 @@ export const updateCounter = (id: string, change: { status?: CounterStatus; skil
     : `${counter.name} changed which services it handles`;
   const seq = await logEvent('COUNTER_CHANGED', { counterId: id, payload: { ...change, released }, actor });
   await replan(reason, seq);
+  queueSignals.emit('counters-changed');
   return { ok: true };
-});
+}
 
 /* ---------- supervisor what-if ---------- */
 
@@ -338,5 +344,6 @@ export const resetDemo = () => serial(async () => {
   ]);
   await logEvent('DEMO_RESET', { actor: 'staff' });
   await replan('Demo reset');
+  queueSignals.emit('counters-changed'); // every counter reopened
   return { ok: true };
 });

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { Worker } from 'node:worker_threads';
+import type { Worker } from 'node:worker_threads';
 import { must } from '../lib/http.js';
+import { spawnWorker } from '../lib/worker.js';
 import { broadcast } from '../realtime.js';
 import type { EvalOptions } from '../sim/evaluate.js';
 import type { LabWorkerMessage } from '../sim/labWorker.js';
@@ -17,14 +18,6 @@ export interface LabJob {
 
 export const LAB_TIMEOUT_MS = 60_000;
 const KEEP_FINISHED = 5;
-
-/**
- * Under tsx (dev) and Vitest this module is loaded as .ts, so the worker entry is the .ts source and the worker
- * needs tsx's loader registered itself (a new thread does not reliably inherit it). Compiled (node dist/) it is .js.
- */
-const EXT = import.meta.url.endsWith('.ts') ? 'ts' : 'js';
-const WORKER_ARGS = { ts: ['--import', 'tsx'], js: [] };
-const WORKER_ENTRY = new URL(`../sim/labWorker.${EXT}`, import.meta.url);
 
 const jobs = new Map<string, LabJob>();
 let active: string | null = null;
@@ -44,7 +37,7 @@ export function startLabJob(params: EvalOptions, { timeoutMs = LAB_TIMEOUT_MS } 
   jobs.set(job.id, job);
   active = job.id;
 
-  const worker = new Worker(WORKER_ENTRY, { workerData: params, execArgv: [...process.execArgv, ...WORKER_ARGS[EXT]] });
+  const worker = spawnWorker('sim/labWorker', params);
 
   /** First terminal event wins; later ones (exit after done, timeout after error) are ignored. */
   const finish = (patch: Pick<LabJob, 'status'> & Partial<LabJob>) => {

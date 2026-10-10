@@ -5,6 +5,7 @@ import { SPECS } from '../sim/evaluate.js';
 import precomputed from '../sim/precomputed.json' with { type: 'json' };
 import { getLabJob, startLabJob } from '../services/labJobs.js';
 import { resetDemo, spawnDemo, whatIf } from '../services/actions.js';
+import { applySuggestion, getSuggestions } from '../services/suggestions.js';
 import { metrics, snapshot, SNAPSHOT_VIEWS } from '../services/queue.js';
 
 export const opsRouter = Router();
@@ -30,6 +31,9 @@ opsRouter.get('/metrics', handle(() => metrics()));
 opsRouter.get('/auth/check', requireStaff, handle(async () => ({ ok: true })));
 
 opsRouter.post('/whatif', requireStaff, handle(async (req) => whatIf(WhatIf.parse(req.body).counters)));
+/** Supervisor suggestions: details only with the staff PIN (the WebSocket carries a bare "suggestions-updated" ping). */
+opsRouter.get('/ops/suggestions', requireStaff, handle(() => getSuggestions()));
+opsRouter.post('/ops/suggestions/:id/apply', requireStaff, handle((req) => applySuggestion(req.params.id, 'staff')));
 opsRouter.post('/demo/spawn', requireStaff, handle(async (req) => spawnDemo(Spawn.parse(req.body ?? {}).count)));
 opsRouter.post('/demo/reset', requireStaff, handle(() => resetDemo()));
 

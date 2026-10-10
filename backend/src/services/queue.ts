@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import type { CounterStatus, Prisma, Token, TokenClass } from '@prisma/client';
 import { ARRIVAL_CONFIG, estimateRates, Observed } from '../engine/arrivals.js';
 import { capableCounts } from '../engine/dispatcher.js';
@@ -20,6 +21,12 @@ export function serial<T>(fn: () => Promise<T>): Promise<T> {
   chain = run.catch(() => undefined);
   return run;
 }
+
+/**
+ * In-process signals for background work that reacts to the queue (supervisor suggestions):
+ * 'counters-changed' after any counter change, 'replanned' with the number of promises at risk.
+ */
+export const queueSignals = new EventEmitter();
 
 /* ---------- event log ---------- */
 
@@ -123,6 +130,7 @@ export async function replan(reason: string, causeEvent?: number, thresholdMs = 
   ]);
   quotes = Object.fromEntries(w.services.map((svc) => [svc.id, toQuote(quote(s, svc.id, now), now)]));
   broadcast('queue', { reason, shifts: shifts.length });
+  queueSignals.emit('replanned', { atRisk: waiting.filter((t) => atRisk(t.promiseP90?.getTime() ?? null, bands[t.id])).length });
   return bands;
 }
 

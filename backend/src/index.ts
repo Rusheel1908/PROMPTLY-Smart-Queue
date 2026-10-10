@@ -4,16 +4,19 @@ import { createApp } from './app.js';
 import { prisma } from './lib/db.js';
 import { attachRealtime, closeRealtime } from './realtime.js';
 import { stopLabJobs } from './services/labJobs.js';
+import { startSuggestions } from './services/suggestions.js';
 import { startSweeper } from './services/sweeper.js';
 
 const server = createServer(createApp());
 attachRealtime(server);
 const stopSweeper = startSweeper();
+const stopSuggestions = startSuggestions();
 server.listen(config.PORT, () => console.log(`Promptly API on http://localhost:${config.PORT}  (ws: /ws)`));
 
 /** Shutdown order: background work first, then clients, then the database. */
 const SHUTDOWN_STEPS: [string, () => Promise<unknown>][] = [
   ['stop sweeper', () => stopSweeper()],
+  ['stop suggestions', () => stopSuggestions()],
   ['stop lab worker', stopLabJobs],
   ['close websockets', closeRealtime],
   ['close http server', () => httpClosed],
