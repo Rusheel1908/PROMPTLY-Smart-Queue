@@ -1,9 +1,80 @@
 @import "tailwindcss";
 
 @theme {
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+
   --color-navy: #071a3d;
+  --color-navy-2: #0d2754;
   --color-brand: #1f6feb;
   --color-accent: #e8512f;
   --color-teal: #0e8f83;
   --color-card: #eef4fd;
+  --color-page: #f5f7fb;
+  --color-ink: #0b0b0b;
+  --color-ink-2: #52514e;
+  --color-muted: #898781;
+  --color-line: #e1e0d9;
+
+  /* status palette: reserved, always paired with icon + label */
+  --color-good: #0ca30c;
+  --color-warning: #fab219;
+  --color-serious: #ec835a;
+  --color-critical: #d03b3b;
+
+  /* categorical series (validated default order) */
+  --color-s1: #2a78d6;
+  --color-s2: #eb6834;
+  --color-s3: #1baf7a;
+  --color-s4: #eda100;
+
+  --animate-ring: ring 1.6s ease-out infinite;
+  --animate-shimmer: shimmer 2.2s linear infinite;
+  --animate-float: float 4s ease-in-out infinite;
+
+  @keyframes ring {
+    0% { box-shadow: 0 0 0 0 rgb(31 111 235 / 0.55); }
+    100% { box-shadow: 0 0 0 18px rgb(31 111 235 / 0); }
+  }
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+  }
+}
+
+html, body, #root { min-height: 100%; }
+body {
+  background: var(--color-page);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+.tabular { font-variant-numeric: tabular-nums; }
+
+.glass {
+  background: rgb(255 255 255 / 0.72);
+  backdrop-filter: blur(14px);
+}
+
+.shimmer-text {
+  background: linear-gradient(90deg, #fff 0%, #9ec5f4 25%, #fff 50%, #9ec5f4 75%, #fff 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: var(--animate-shimmer);
+}
+
+.grid-dots {
+  background-image: radial-gradient(rgb(7 26 61 / 0.07) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; border-radius: 6px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

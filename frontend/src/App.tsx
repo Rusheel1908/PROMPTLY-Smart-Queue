@@ -1,30 +1,27 @@
-import { NavLink, Route, Routes } from 'react-router-dom';
-import Kiosk from './pages/Kiosk';
-import Counter from './pages/Counter';
+import { Route, Routes } from 'react-router-dom';
+import { Layout } from './components/Layout';
+import { StaffGate } from './components/StaffGate';
+import { ToastProvider } from './components/ui';
 import Board from './pages/Board';
-import Status from './pages/Status';
+import Counter from './pages/Counter';
+import Kiosk from './pages/Kiosk';
+import Lab from './pages/Lab';
 import Ops from './pages/Ops';
-
-const links = [['/', 'Kiosk'], ['/counter', 'Counter'], ['/board', 'Board'], ['/ops', 'Ops']] as const;
+import Status from './pages/Status';
 
 export default function App() {
   return (
-    <div className="min-h-screen bg-white">
-      <nav className="flex gap-4 bg-navy px-6 py-3 text-white">
-        <span className="font-bold">Promptly</span>
-        {links.map(([to, label]) => (
-          <NavLink key={to} to={to} className={({ isActive }) => (isActive ? 'text-yellow-300' : '')}>{label}</NavLink>
-        ))}
-      </nav>
-      <main className="p-6">
+    <ToastProvider>
+      <Layout>
         <Routes>
           <Route path="/" element={<Kiosk />} />
-          <Route path="/counter" element={<Counter />} />
+          <Route path="/counter" element={<StaffGate title="Counter console"><Counter /></StaffGate>} />
           <Route path="/board" element={<Board />} />
           <Route path="/status/:id" element={<Status />} />
-          <Route path="/ops" element={<Ops />} />
+          <Route path="/ops" element={<StaffGate title="Supervisor ops"><Ops /></StaffGate>} />
+          <Route path="/lab" element={<Lab />} />
         </Routes>
-      </main>
-    </div>
+      </Layout>
+    </ToastProvider>
   );
 }
