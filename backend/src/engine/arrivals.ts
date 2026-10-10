@@ -13,7 +13,8 @@ export const CLASSES: TokenClass[] = ['EMERGENCY', 'PRIORITY', 'APPOINTMENT', 'N
 export const ARRIVAL_CONFIG = {
   windowMs: 60 * MIN,         // sliding window of observed arrivals
   priorPerServiceMin: 0.15,   // configured belief: customers/min per service, before anything is observed
-  priorClassShare: { EMERGENCY: 0.01, PRIORITY: 0.1, APPOINTMENT: 0.14, NORMAL: 0.75 } as Record<TokenClass, number>,
+  // APPOINTMENT is 0: appointments only come from bookings, which the forecast models one by one (EngineState.expected)
+  priorClassShare: { EMERGENCY: 0.01, PRIORITY: 0.1, APPOINTMENT: 0, NORMAL: 0.75 } as Record<TokenClass, number>,
   priorWeightMin: 20,         // the prior counts as this many minutes of observation
   horizonMs: 3 * 60 * MIN,    // replays sample no arrivals beyond now + horizon
 };
@@ -43,10 +44,13 @@ export function estimateRates(
 
 /** True when replays will sample at least one stream of future customers. */
 export const samplesArrivals = (s: EngineState) =>
-  Object.values(s.arrivals ?? {}).some((byClass) => Object.values(byClass).some((r) => r > 0));
+  Object.values(s.arrivals ?? {}).some((byClass) => Object.values(byClass).some((r) => r > 0)) || !!s.expected?.length;
 
-/** One Poisson stream per (service, class); `next` is its next arrival time (ms). */
-interface Stream { svc: string; cls: TokenClass; rate: number; next: number }
+/**
+ * One Poisson stream per (service, class); `next` is its next arrival time (ms). A stream with a `deadline` is a
+ * booked appointment: it arrives once, then never again.
+ */
+interface Stream { svc: string; cls: TokenClass; rate: number; next: number; deadline?: number }
 
 /** Hypothetical future customers of one replay, drawn lazily so a short replay draws only a few. */
 export interface Arrivals { streams: Stream[]; end: number; seq: number; rng: Rng; s: EngineState }
@@ -54,16 +58,22 @@ export interface Arrivals { streams: Stream[]; end: number; seq: number; rng: Rn
 /**
  * Start one replay's arrival streams. Zero-rate streams draw nothing, and services no open
  * counter can serve are skipped: their customers could not affect anyone's call time.
+ * Each booked appointment shows up in this replay with its probability (drawn only when it is uncertain).
  */
 export function startArrivals(
   s: EngineState, capable: Record<string, number>, now: number, firstSeq: number, rng: Rng, cfg: ArrivalConfig = ARRIVAL_CONFIG,
 ): Arrivals {
-  const streams = Object.entries(s.arrivals ?? {})
-    .filter(([svc]) => s.services[svc] && capable[svc] > 0)
+  const servable = (svc: string) => !!s.services[svc] && capable[svc] > 0;
+  const streams: Stream[] = Object.entries(s.arrivals ?? {})
+    .filter(([svc]) => servable(svc))
     .flatMap(([svc, byClass]) => CLASSES.map((cls) => ({ svc, cls, rate: byClass[cls] ?? 0 })))
     .filter((x) => x.rate > 0)
     .map((x) => ({ ...x, next: now + exponential(x.rate, rng) * MIN }));
-  return { streams, end: now + cfg.horizonMs, seq: firstSeq, rng, s };
+  const shows = (p: number) => p >= 1 || (p > 0 && rng() < p);
+  const booked: Stream[] = (s.expected ?? [])
+    .filter((e) => servable(e.serviceId) && shows(e.p))
+    .map((e) => ({ svc: e.serviceId, cls: 'APPOINTMENT', rate: 0, next: Math.max(now, e.t), deadline: e.deadline }));
+  return { streams: [...streams, ...booked], end: now + cfg.horizonMs, seq: firstSeq, rng, s };
 }
 
 /** The stream whose next arrival comes first (optionally only for some services); undefined past the horizon. */
@@ -78,9 +88,9 @@ export function nextArrival(a: Arrivals, services?: Set<string>): Stream | undef
 export function takeArrival(a: Arrivals, x: Stream): EngineToken {
   const t = x.next;
   const seq = a.seq++;
-  x.next += exponential(x.rate, a.rng) * MIN;
+  x.next = x.deadline == null ? t + exponential(x.rate, a.rng) * MIN : Infinity; // a booking arrives once
   return {
     id: `~arr${seq}`, seq, serviceId: x.svc, cls: x.cls,
-    creditedArrival: t, notBefore: t, deadline: t + a.s.services[x.svc].targetWaitMs * CLASS_FACTOR[x.cls],
+    creditedArrival: t, notBefore: t, deadline: x.deadline ?? t + a.s.services[x.svc].targetWaitMs * CLASS_FACTOR[x.cls],
   };
 }

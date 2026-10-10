@@ -32,18 +32,19 @@ enum TokenState {
 }
 
 model Service {
-  id          String         @id @default(cuid())
-  name        String
-  prefix      String         @unique
-  icon        String         @default("circle")
-  targetWaitS Int
-  priorMu     Float // log-mean of service minutes (configured prior)
-  priorSigma  Float // log-sd of service minutes (configured prior)
-  obsN        Int            @default(0) // online log-duration stats (Welford)
-  obsMean     Float          @default(0)
-  obsM2       Float          @default(0)
-  skills      CounterSkill[]
-  tokens      Token[]
+  id           String         @id @default(cuid())
+  name         String
+  prefix       String         @unique
+  icon         String         @default("circle")
+  targetWaitS  Int
+  priorMu      Float // log-mean of service minutes (configured prior)
+  priorSigma   Float // log-sd of service minutes (configured prior)
+  obsN         Int            @default(0) // online log-duration stats (Welford)
+  obsMean      Float          @default(0)
+  obsM2        Float          @default(0)
+  skills       CounterSkill[]
+  tokens       Token[]
+  appointments Appointment[]
 }
 
 model Counter {
@@ -64,20 +65,20 @@ model CounterSkill {
 }
 
 model Token {
-  id              String      @id @default(cuid())
-  seq             Int         @default(autoincrement())
+  id              String             @id @default(cuid())
+  seq             Int                @default(autoincrement())
   code            String
   serviceId       String
-  service         Service     @relation(fields: [serviceId], references: [id])
-  class           TokenClass  @default(NORMAL)
-  state           TokenState  @default(WAITING)
-  arrivedAt       DateTime    @default(now())
-  creditedArrival DateTime    @default(now())
+  service         Service            @relation(fields: [serviceId], references: [id])
+  class           TokenClass         @default(NORMAL)
+  state           TokenState         @default(WAITING)
+  arrivedAt       DateTime           @default(now())
+  creditedArrival DateTime           @default(now())
   deadline        DateTime
-  notBefore       DateTime    @default(now())
-  missCount       Int         @default(0)
-  recallCount     Int         @default(0)
-  redirectDepth   Int         @default(0)
+  notBefore       DateTime           @default(now())
+  missCount       Int                @default(0)
+  recallCount     Int                @default(0)
+  redirectDepth   Int                @default(0)
   promiseP90      DateTime?
   etaP50          DateTime?
   etaP90          DateTime?
@@ -87,12 +88,13 @@ model Token {
   doneAt          DateTime?
   pickReason      String?
   counterId       String?
-  counter         Counter?    @relation(fields: [counterId], references: [id])
+  counter         Counter?           @relation(fields: [counterId], references: [id])
   parentTokenId   String?
-  secret          String      @unique // per-token access key from the QR link, base64url(24 random bytes)
+  secret          String             @unique // per-token access key from the QR link, base64url(24 random bytes)
   etaChanges      EtaChange[]
   notifications   NotificationLog[]
   pushSubs        PushSubscription[]
+  appointment     Appointment? // the booking this token was checked in from
 
   @@index([state, serviceId])
 }
@@ -117,32 +119,66 @@ model EtaChange {
   causeEvent Int?
 }
 
-/// One row per notification a customer was sent. The unique key is the dedupe: a second insert for the same
-/// (token, dedupeKey) fails, so each event reaches a customer once however often the pipeline sees it.
-model NotificationLog {
-  id        Int      @id @default(autoincrement())
-  tokenId   String
-  token     Token    @relation(fields: [tokenId], references: [id], onDelete: Cascade)
-  event     String // NotifyEvent, e.g. CALLED
-  dedupeKey String // "CALLED#0" (event#round), "BIG_DELAY#<etaChangeId>"
-  vars      Json // message variables (code, counter, time…); text is rendered when read, so it can be translated
-  pushed    Int      @default(0) // push subscriptions it reached
-  ts        DateTime @default(now())
-
-  @@unique([tokenId, dedupeKey])
+enum AppointmentStatus {
+  BOOKED
+  CHECKED_IN
+  LATE_DOWNGRADED
+  NO_SHOW
+  CANCELLED
 }
 
-/// A browser's Web Push subscription, following one token. Subscribing again from the same browser moves it.
+/// A booked time slot. No personal data: the booking code and the secret link are the customer's only handles.
+model Appointment {
+  id            String             @id @default(cuid())
+  code          String             @unique // "BK-7K3Q9P", typed at the kiosk
+  secret        String             @unique // access key in the booking link, only sent in the booking response
+  serviceId     String
+  service       Service            @relation(fields: [serviceId], references: [id])
+  slotStart     DateTime
+  status        AppointmentStatus  @default(BOOKED)
+  tokenId       String?            @unique
+  token         Token?             @relation(fields: [tokenId], references: [id], onDelete: SetNull)
+  remindedAt    DateTime? // claimed with a conditional update, so the reminder goes out once
+  createdAt     DateTime           @default(now())
+  notifications NotificationLog[]
+  pushSubs      PushSubscription[]
+
+  @@index([slotStart, status])
+}
+
+/// One row per notification a customer was sent, about a token or (before check-in) an appointment. The unique keys
+/// are the dedupe: a second insert for the same (owner, dedupeKey) is skipped, so each event reaches a customer once.
+model NotificationLog {
+  id            Int          @id @default(autoincrement())
+  tokenId       String?
+  token         Token?       @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  appointmentId String?
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  event         String // NotifyEvent, e.g. CALLED
+  dedupeKey     String // "CALLED#0" (event#round), "BIG_DELAY#<etaChangeId>"
+  vars          Json // message variables (code, counter, time…); text is rendered when read, so it can be translated
+  pushed        Int          @default(0) // push subscriptions it reached
+  ts            DateTime     @default(now())
+
+  @@unique([tokenId, dedupeKey])
+  @@unique([appointmentId, dedupeKey])
+}
+
+/// A browser's Web Push subscription, following one token or one appointment (moved to its token at check-in).
+/// Subscribing again from the same browser moves it.
 model PushSubscription {
-  id        String   @id @default(cuid())
-  tokenId   String
-  token     Token    @relation(fields: [tokenId], references: [id], onDelete: Cascade)
-  endpoint  String   @unique
-  p256dh    String
-  auth      String
-  createdAt DateTime @default(now())
+  id            String       @id @default(cuid())
+  tokenId       String?
+  token         Token?       @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  appointmentId String?
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  endpoint      String       @unique
+  p256dh        String
+  auth          String
+  createdAt     DateTime     @default(now())
 
   @@index([tokenId])
+  @@index([appointmentId])
 }
 
 enum StaffRole {

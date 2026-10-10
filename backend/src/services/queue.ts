@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { CounterStatus, Prisma, Token, TokenClass } from '@prisma/client';
+import { APPOINTMENT_CONFIG, appointmentDeadline } from '../engine/appointments.js';
 import { ARRIVAL_CONFIG, estimateRates, Observed } from '../engine/arrivals.js';
 import { capableCounts } from '../engine/dispatcher.js';
 import { meanMinutes, posterior } from '../engine/duration.js';
@@ -47,7 +48,7 @@ export const startOfDay = () => new Date(new Date(clock.now()).setHours(0, 0, 0,
 
 export async function loadWorld() {
   const at = clock.now();
-  const [services, counters, active, issued, firstToday] = await Promise.all([
+  const [services, counters, active, issued, firstToday, booked] = await Promise.all([
     prisma.service.findMany({ orderBy: { prefix: 'asc' } }),
     prisma.counter.findMany({ include: { skills: true }, orderBy: { name: 'asc' } }),
     prisma.token.findMany({ where: { state: { in: [...ACTIVE] } }, orderBy: { seq: 'asc' } }),
@@ -56,18 +57,29 @@ export async function loadWorld() {
       where: { type: 'TOKEN_ISSUED', ts: { gte: new Date(at - ARRIVAL_CONFIG.windowMs) } }, select: { ts: true, payload: true },
     }),
     prisma.event.findFirst({ where: { ts: { gte: startOfDay() } }, orderBy: { seq: 'asc' }, select: { ts: true } }),
+    // bookings that may still arrive: check-in window not closed, slot within the forecast horizon
+    prisma.appointment.findMany({
+      where: {
+        status: 'BOOKED',
+        slotStart: { gte: new Date(at - APPOINTMENT_CONFIG.checkIn.closesAfterMs), lte: new Date(at + ARRIVAL_CONFIG.horizonMs) },
+      },
+      select: { id: true, serviceId: true, slotStart: true },
+    }),
   ]);
-  return { at, services, counters, active, issued, openedAt: firstToday?.ts.getTime() ?? at };
+  return { at, services, counters, active, issued, booked, openedAt: firstToday?.ts.getTime() ?? at };
 }
 export type World = Awaited<ReturnType<typeof loadWorld>>;
 
-/** TOKEN_ISSUED events as observed arrivals. Older events name the service instead of its id. */
+/**
+ * TOKEN_ISSUED events as observed walk-in arrivals. Older events name the service instead of its id. Check-ins from a
+ * booking are left out: bookings are forecast one by one (toEngine's `expected`), so counting them here would double them.
+ */
 function observedArrivals(w: World): Observed[] {
   const idByName = Object.fromEntries(w.services.map((s) => [s.name, s.id]));
   return w.issued.flatMap((e) => {
-    const p = (e.payload ?? {}) as { class?: TokenClass; serviceId?: string; service?: string };
+    const p = (e.payload ?? {}) as { class?: TokenClass; serviceId?: string; service?: string; appointmentId?: string };
     const serviceId = p.serviceId ?? idByName[p.service ?? ''];
-    return serviceId && p.class ? [{ t: e.ts.getTime(), serviceId, cls: p.class }] : [];
+    return serviceId && p.class && !p.appointmentId ? [{ t: e.ts.getTime(), serviceId, cls: p.class }] : [];
   });
 }
 
@@ -100,6 +112,14 @@ export function toEngine(w: World, overrides: CounterOverride[] = []): EngineSta
     })),
     waiting: w.active.filter((t) => t.state === 'WAITING').map(toEngineToken),
     arrivals: estimateRates(observedArrivals(w), w.services.map((s) => s.id), w.at, w.openedAt),
+    expected: w.booked.flatMap((a) => {
+      const svc = w.services.find((x) => x.id === a.serviceId);
+      const slot = a.slotStart.getTime();
+      return svc ? [{
+        id: a.id, serviceId: a.serviceId, t: Math.max(w.at, slot), p: APPOINTMENT_CONFIG.showUpRate,
+        deadline: appointmentDeadline(slot, svc.targetWaitS * 1000),
+      }] : [];
+    }),
   };
 }
 

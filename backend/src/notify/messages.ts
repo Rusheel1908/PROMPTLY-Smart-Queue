@@ -4,14 +4,16 @@
  * never anything personal.
  */
 export interface Vars {
-  code: string;
+  code?: string; // the token code; never the booking code (that one checks a customer in)
+  service?: string; // service name, e.g. "Deposits"
   counter?: string;
   time?: string; // "10:42", already formatted in the branch's time zone
+  opens?: string; // check-in opening time, formatted like `time`
   minutes?: number;
   misses?: number;
   reason?: string; // a queue reason such as "Counter 2 closed"
 }
-export const VAR_NAMES = ['code', 'counter', 'time', 'minutes', 'misses', 'reason'] as const satisfies readonly (keyof Vars)[];
+export const VAR_NAMES = ['code', 'service', 'counter', 'time', 'opens', 'minutes', 'misses', 'reason'] as const satisfies readonly (keyof Vars)[];
 
 const EN = {
   'notify.nextUp.title': "You're almost up",
@@ -26,6 +28,14 @@ const EN = {
   'notify.noShow.body': 'Your token was cancelled after {misses} missed calls. Please ask at the desk.',
   'notify.delay.title': 'Token {code}: about {minutes} min later',
   'notify.delay.body': 'New expected call around {time}. Why: {reason}',
+  'notify.apptReminder.title': 'Your {service} appointment is at {time}',
+  'notify.apptReminder.body': 'Check in from {opens} at the kiosk, or open your booking link.',
+  'notify.apptLate.title': 'Token {code}: joined as a regular customer',
+  'notify.apptLate.body': 'Arrived after your check-in window, so appointment priority no longer applies.',
+  'notify.apptMissed.title': 'You missed your appointment at {time}',
+  'notify.apptMissed.body': 'Book again or take a normal token.',
+  'notify.apptCancelled.title': 'Your appointment at {time} was cancelled',
+  'notify.apptCancelled.body': 'The branch cancelled this booking. Book again or take a normal token.',
 } as const;
 
 export type MessageKey = keyof typeof EN;

@@ -33,6 +33,16 @@ export interface EngineState {
   waiting: EngineToken[];
   /** Expected future arrivals; when absent the forecast replays only the current queue. */
   arrivals?: ArrivalRates;
+  /** Booked appointments not yet checked in: each arrives once at `t` with probability `p`. */
+  expected?: ExpectedArrival[];
+}
+
+export interface ExpectedArrival {
+  id: string;
+  serviceId: string;
+  t: number;        // ms epoch it would arrive (its slot, or now if the slot has started)
+  p: number;        // show-up probability
+  deadline: number; // ms epoch, anchored to the slot
 }
 
 /** A dispatch policy: given the queue, which token should this counter call now? */

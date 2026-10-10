@@ -86,7 +86,7 @@ export async function tokenDetail(id: string) {
   const [waiting, child, notifications] = await Promise.all([
     prisma.token.findMany({ where: { state: 'WAITING', etaP50: { not: null } }, select: { id: true, etaP50: true } }),
     prisma.token.findFirst({ where: { parentTokenId: id }, select: { id: true, code: true, secret: true } }),
-    recentNotifications(id),
+    recentNotifications({ tokenId: id }),
   ]);
   const ahead = waiting.filter((t) => token.etaP50 && t.etaP50! < token.etaP50).length;
   const pos = Object.fromEntries(waiting.filter((t) => t.id === token.id).map((t) => [t.id, ahead]));

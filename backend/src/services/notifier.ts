@@ -3,7 +3,7 @@ import { fail, must } from '../lib/http.js';
 import { prisma } from '../lib/db.js';
 import { render, type Vars } from '../notify/messages.js';
 import { notice, replanNotices, type Notice, type ReplanOutcome } from '../notify/notices.js';
-import { EVENT_NOTICE, NOTIFY_CONFIG, NOTIFY_RULES, type NotifyEvent } from '../notify/rules.js';
+import { EVENT_NOTICE, NOTIFY_CONFIG, NOTIFY_RULES, type NotifyEvent, type TokenEvent } from '../notify/rules.js';
 import { broadcast } from '../realtime.js';
 import { isGone, pushEnabled, sendPush, type PushPayload, type PushTarget } from './push.js';
 
@@ -63,10 +63,19 @@ export function onQueueEvent(type: string, d: EventData) {
   });
 }
 
-async function notifyToken(tokenId: string, event: NotifyEvent) {
+async function notifyToken(tokenId: string, event: TokenEvent) {
   const t = await prisma.token.findUnique({ where: { id: tokenId }, include: { counter: { select: { name: true } } } });
   if (t) await deliver([notice(tokenId, event, { ...t, counterName: t.counter?.name })]);
 }
+
+/** Notify outside the event pipeline (appointment reminders, check-in outcomes). Runs in the background like the rest. */
+export function notifyLater(...notices: Notice[]) {
+  notices.length && track(() => deliver(notices));
+}
+
+/** Push subscriptions of an appointment follow the customer to the token they checked in for. */
+export const moveAppointmentFollowers = (appointmentId: string, tokenId: string) =>
+  prisma.pushSubscription.updateMany({ where: { appointmentId }, data: { appointmentId: null, tokenId } });
 
 /** Called by replan once its writes are committed. */
 export function onReplan(outcome: ReplanOutcome) {
@@ -76,29 +85,45 @@ export function onReplan(outcome: ReplanOutcome) {
 
 /* ---------- log once, then tell the page and the phone ---------- */
 
-/** The unique (token, dedupeKey) index decides what is new: duplicates are skipped by the insert itself. */
+/** The unique (owner, dedupeKey) indexes decide what is new: duplicates are skipped by the insert itself. */
 async function deliver(notices: Notice[]) {
   const fresh = await prisma.notificationLog.createManyAndReturn({
-    data: notices.map((n) => ({ tokenId: n.tokenId, event: n.event, dedupeKey: n.key, vars: n.vars as unknown as Prisma.InputJsonObject })),
+    data: notices.map((n) => ({
+      tokenId: n.tokenId, appointmentId: n.appointmentId, event: n.event, dedupeKey: n.key, vars: n.vars as unknown as Prisma.InputJsonObject,
+    })),
     skipDuplicates: true,
   });
   await Promise.all(fresh.map(announce));
 }
 
-async function announce(row: NotificationLog) {
-  const token = await prisma.token.findUnique({ where: { id: row.tokenId }, select: { code: true, secret: true, pushSubs: true } });
-  if (!token) return;
-  broadcast('notify', { code: token.code }); // the public code only: the matching status page refetches its own detail
-  const { title, body, urgency } = renderNotice(row);
-  if (!NOTIFY_RULES[row.event as NotifyEvent].sendPush || !pushEnabled() || token.pushSubs.length === 0) return;
+/** Who a notification is for: the page to ping, the page a tap opens, and the phones following it. */
+interface Recipient { pingCode: string | null; url: string; subs: { id: string; endpoint: string; p256dh: string; auth: string }[] }
 
-  const payload: PushPayload = {
-    title, body, urgency,
-    tag: `promptly-${row.tokenId}`, // one notification per token on the phone: the newest replaces the last
-    url: `/status/${row.tokenId}?k=${encodeURIComponent(token.secret)}`, // inside the encrypted payload, opened on click
-  };
-  const results = await Promise.allSettled(token.pushSubs.map((s) => sendPush(s, payload)));
-  const failed = token.pushSubs.flatMap((s, i) => {
+const RECIPIENTS: Record<'token' | 'appointment', (id: string) => Promise<Recipient | null>> = {
+  token: async (id) => {
+    const t = await prisma.token.findUnique({ where: { id }, select: { code: true, secret: true, pushSubs: true } });
+    // the public token code only: the matching status page refetches its own detail with its key
+    return t && { pingCode: t.code, url: `/status/${id}?k=${encodeURIComponent(t.secret)}`, subs: t.pushSubs };
+  },
+  appointment: async (id) => {
+    const a = await prisma.appointment.findUnique({ where: { id }, select: { secret: true, pushSubs: true } });
+    // no ping: the booking code checks a customer in, so it never goes on the public socket
+    return a && { pingCode: null, url: `/appointment/${id}?k=${encodeURIComponent(a.secret)}`, subs: a.pushSubs };
+  },
+};
+
+async function announce(row: NotificationLog) {
+  const ownerId = row.tokenId ?? row.appointmentId!;
+  const to = await RECIPIENTS[row.tokenId ? 'token' : 'appointment'](ownerId);
+  if (!to) return;
+  to.pingCode && broadcast('notify', { code: to.pingCode });
+  const { title, body, urgency } = renderNotice(row);
+  if (!NOTIFY_RULES[row.event as NotifyEvent].sendPush || !pushEnabled() || to.subs.length === 0) return;
+
+  // the url is inside the encrypted payload, opened on tap; one notification per owner: the newest replaces the last
+  const payload: PushPayload = { title, body, urgency, tag: `promptly-${ownerId}`, url: to.url };
+  const results = await Promise.allSettled(to.subs.map((s) => sendPush(s, payload)));
+  const failed = to.subs.flatMap((s, i) => {
     const r = results[i];
     return r.status === 'rejected' ? [{ s, reason: r.reason }] : [];
   });
@@ -106,14 +131,33 @@ async function announce(row: NotificationLog) {
     console.error(`[notify] push to ${new URL(f.s.endpoint).host} failed:`, f.reason?.statusCode ?? f.reason?.message ?? f.reason));
   const gone = failed.filter((f) => isGone(f.reason)).map((f) => f.s.id);
   gone.length && await prisma.pushSubscription.deleteMany({ where: { id: { in: gone } } });
-  await prisma.notificationLog.update({ where: { id: row.id }, data: { pushed: token.pushSubs.length - failed.length } });
+  await prisma.notificationLog.update({ where: { id: row.id }, data: { pushed: to.subs.length - failed.length } });
 }
 
 /* ---------- read model + subscriptions ---------- */
 
-export async function recentNotifications(tokenId: string) {
-  const rows = await prisma.notificationLog.findMany({ where: { tokenId }, orderBy: { id: 'desc' }, take: NOTIFY_CONFIG.recentInDetail });
+type Owner = { tokenId: string } | { appointmentId: string };
+
+export async function recentNotifications(owner: Owner) {
+  const rows = await prisma.notificationLog.findMany({ where: owner, orderBy: { id: 'desc' }, take: NOTIFY_CONFIG.recentInDetail });
   return rows.map((r) => ({ id: r.id, event: r.event, ts: r.ts, ...renderNotice(r) }));
+}
+
+/** Point this browser's subscription at a token or an appointment (one owner at a time). */
+export async function saveSubscription(owner: Owner, sub: PushTarget) {
+  must(pushEnabled(), 409, 'Push notifications are not set up on this server');
+  const to = { tokenId: null, appointmentId: null, ...owner };
+  await prisma.pushSubscription.upsert({
+    where: { endpoint: sub.endpoint },
+    create: { ...to, ...sub },
+    update: { ...to, p256dh: sub.p256dh, auth: sub.auth },
+  });
+  return { ok: true };
+}
+
+export async function forgetSubscription(owner: Owner, endpoint: string) {
+  const { count } = await prisma.pushSubscription.deleteMany({ where: { ...owner, endpoint } });
+  return { ok: true, removed: count };
 }
 
 /** States in which a token can still be called, so following it makes sense. */
@@ -124,15 +168,7 @@ export async function followToken(tokenId: string, sub: PushTarget) {
   must(pushEnabled(), 409, 'Push notifications are not set up on this server');
   const t = (await prisma.token.findUnique({ where: { id: tokenId }, select: { state: true } })) ?? fail(404, 'Token not found');
   must(FOLLOWABLE.includes(t.state), 409, 'This token is finished, so there is nothing to notify');
-  await prisma.pushSubscription.upsert({
-    where: { endpoint: sub.endpoint },
-    create: { tokenId, ...sub },
-    update: { tokenId, p256dh: sub.p256dh, auth: sub.auth },
-  });
-  return { ok: true };
+  return saveSubscription({ tokenId }, sub);
 }
 
-export async function unfollowToken(tokenId: string, endpoint: string) {
-  const { count } = await prisma.pushSubscription.deleteMany({ where: { tokenId, endpoint } });
-  return { ok: true, removed: count };
-}
+export const unfollowToken = (tokenId: string, endpoint: string) => forgetSubscription({ tokenId }, endpoint);

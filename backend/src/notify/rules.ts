@@ -1,8 +1,11 @@
 import { MIN } from '../engine/types.js';
 import type { MessageKey } from './messages.js';
 
-/** What a customer can be told about their token. */
-export type NotifyEvent = 'NEXT_UP' | 'CALLED' | 'RECALLED' | 'MISSED' | 'NO_SHOW' | 'BIG_DELAY';
+/** What a customer can be told about their token… */
+export type TokenEvent = 'NEXT_UP' | 'CALLED' | 'RECALLED' | 'MISSED' | 'NO_SHOW' | 'BIG_DELAY' | 'APPT_LATE';
+/** …or, before check-in, about their appointment. */
+export type AppointmentEvent = 'APPT_REMINDER' | 'APPT_MISSED' | 'APPT_CANCELLED';
+export type NotifyEvent = TokenEvent | AppointmentEvent;
 export type Urgency = 'normal' | 'high';
 
 export interface Rule { titleKey: MessageKey; bodyKey: MessageKey; urgency: Urgency; sendPush: boolean }
@@ -15,6 +18,10 @@ export const NOTIFY_RULES = {
   MISSED: { titleKey: 'notify.missed.title', bodyKey: 'notify.missed.body', urgency: 'high', sendPush: true },
   NO_SHOW: { titleKey: 'notify.noShow.title', bodyKey: 'notify.noShow.body', urgency: 'high', sendPush: true },
   BIG_DELAY: { titleKey: 'notify.delay.title', bodyKey: 'notify.delay.body', urgency: 'normal', sendPush: true },
+  APPT_LATE: { titleKey: 'notify.apptLate.title', bodyKey: 'notify.apptLate.body', urgency: 'normal', sendPush: true },
+  APPT_REMINDER: { titleKey: 'notify.apptReminder.title', bodyKey: 'notify.apptReminder.body', urgency: 'normal', sendPush: true },
+  APPT_MISSED: { titleKey: 'notify.apptMissed.title', bodyKey: 'notify.apptMissed.body', urgency: 'high', sendPush: true },
+  APPT_CANCELLED: { titleKey: 'notify.apptCancelled.title', bodyKey: 'notify.apptCancelled.body', urgency: 'high', sendPush: true },
 } as const satisfies Record<NotifyEvent, Rule>;
 
 export const NOTIFY_CONFIG = {
@@ -26,7 +33,7 @@ export const NOTIFY_CONFIG = {
 };
 
 /** Queue events that tell the token's holder something. A miss splits on whether the token re-entered. */
-export const EVENT_NOTICE: Record<string, (payload: { outcome?: string } | null) => NotifyEvent> = {
+export const EVENT_NOTICE: Record<string, (payload: { outcome?: string } | null) => TokenEvent> = {
   CALLED: () => 'CALLED',
   RECALLED: () => 'RECALLED',
   MISSED: (p) => (p?.outcome === 'NO_SHOW' ? 'NO_SHOW' : 'MISSED'),
