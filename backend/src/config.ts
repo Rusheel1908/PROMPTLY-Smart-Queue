@@ -28,6 +28,17 @@ export const STAFF_AUDIT = {
   minExcess: 0.1, // …and at least 10 points above it
 } as const;
 
+/**
+ * Hosts of the browsers' push services. The server only ever sends Web Push to these, so a subscription
+ * endpoint cannot be used to make it call an arbitrary (e.g. internal) URL.
+ */
+export const PUSH_HOSTS = [
+  'fcm.googleapis.com', // Chrome, Edge on Android, most Chromium browsers
+  'updates.push.services.mozilla.com', // Firefox
+  '.notify.windows.com', // Edge on Windows
+  '.push.apple.com', // Safari, and iPhone home-screen apps
+] as const;
+
 export const LIMITS = {
   jsonBody: '20kb',
   wsMaxConnections: 500,
@@ -40,6 +51,13 @@ const trustProxy = (v: string): boolean | number | string => BOOLS[v] ?? (/^\d+$
 
 const csv = (v: string) => v.split(',').map((s) => s.trim()).filter(Boolean);
 
+/** An empty value (`VAPID_PUBLIC_KEY=` in .env) counts as unset. */
+const optional = <T extends z.ZodTypeAny>(schema: T) => z.preprocess((v) => (v === '' ? undefined : v), schema.optional());
+const base64url = z.string().regex(/^[A-Za-z0-9_-]+$/, 'must be a base64url key from npm run push:keys');
+
+/** Web Push needs all three VAPID values; with none, notifications are in-page only. */
+const VAPID = ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_SUBJECT'] as const;
+
 const Env = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
@@ -48,6 +66,13 @@ const Env = z.object({
     .pipe(z.array(z.string().url('each origin must be a URL like https://app.example.com')).min(1, 'needs at least one origin'))
     .transform((list) => list.map((o) => new URL(o).origin)), // "https://x.com/" → "https://x.com", as browsers send it
   TRUST_PROXY: z.string().default('false').transform(trustProxy),
+  VAPID_PUBLIC_KEY: optional(base64url),
+  VAPID_PRIVATE_KEY: optional(base64url),
+  VAPID_SUBJECT: optional(z.string().regex(/^(mailto:|https:\/\/)/, 'must start with mailto: or https://')),
+}).superRefine((env, ctx) => {
+  const missing = VAPID.filter((k) => !env[k]);
+  if (missing.length === 0 || missing.length === VAPID.length) return;
+  missing.forEach((k) => ctx.addIssue({ code: 'custom', path: [k], message: `is required when any of ${VAPID.join(', ')} is set` }));
 });
 
 export type Config = z.infer<typeof Env>;

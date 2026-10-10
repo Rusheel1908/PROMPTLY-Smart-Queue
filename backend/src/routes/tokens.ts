@@ -4,6 +4,8 @@ import { RATE_LIMITS } from '../config.js';
 import { actor, handle, loadStaff, must, rateLimit, requireRole } from '../lib/http.js';
 import { can, type Action } from '../lib/permissions.js';
 import { cancelToken, holdsToken, issueToken, reactivate, stepAway, tokenDetail } from '../services/actions.js';
+import { followToken, unfollowToken } from '../services/notifier.js';
+import { isPushEndpoint } from '../services/push.js';
 
 export const tokensRouter = Router();
 
@@ -12,6 +14,12 @@ const CreateToken = z.object({
   class: z.enum(['EMERGENCY', 'PRIORITY', 'APPOINTMENT', 'NORMAL']).default('NORMAL'),
 });
 const Away = z.object({ minutes: z.number().int().min(1).max(30).default(5) });
+const Endpoint = z.string().max(2048).refine(isPushEndpoint, 'must be an https URL of a browser push service');
+/** A browser PushSubscription as JSON (subscription.toJSON()). */
+const PushSub = z.object({
+  endpoint: Endpoint,
+  keys: z.object({ p256dh: z.string().min(1).max(200), auth: z.string().min(1).max(100) }),
+});
 
 const staffMay = (req: Request, action: Action) => !!req.staff && can(req.staff.role, action);
 
@@ -42,7 +50,27 @@ const statusRead: RequestHandler = (req, res, next) => {
   })).catch(next);
 };
 
+/**
+ * Push subscriptions: the QR-link holder only (a staff session is not enough to point a customer's alerts elsewhere).
+ * Limited like status reads: per token for the holder, so a branch full of phones on one IP can all subscribe.
+ */
+const pushPerKey = rateLimit(RATE_LIMITS.tokenAction, (req) => `push:${req.params.id}`);
+const pushPerIp = rateLimit(RATE_LIMITS.tokenAction);
+const holderOnly: RequestHandler = (req, res, next) => {
+  holdsToken(req.params.id, req.header('x-token-key')).then((holder) => (holder ? pushPerKey : pushPerIp)(req, res, (err?: unknown) => {
+    if (err) return next(err);
+    must(holder, 404, 'Token not found');
+    next();
+  })).catch(next);
+};
+
 tokensRouter.get('/:id', loadStaff, statusRead, handle((req) => tokenDetail(req.params.id)));
 tokensRouter.post('/:id/away', rateLimit(RATE_LIMITS.tokenAction), loadStaff, ownerOrStaff, handle((req) => stepAway(req.params.id, Away.parse(req.body ?? {}).minutes)));
 tokensRouter.post('/:id/cancel', rateLimit(RATE_LIMITS.tokenAction), loadStaff, ownerOrStaff, handle((req) => cancelToken(req.params.id)));
+tokensRouter.post('/:id/push', holderOnly, handle((req) => {
+  const { endpoint, keys } = PushSub.parse(req.body);
+  return followToken(req.params.id, { endpoint, ...keys });
+}, 201));
+tokensRouter.delete('/:id/push', holderOnly, handle((req) =>
+  unfollowToken(req.params.id, z.object({ endpoint: Endpoint }).parse(req.body).endpoint)));
 tokensRouter.post('/:id/reactivate', requireRole('reactivate'), handle((req) => reactivate(req.params.id, actor(req))));

@@ -15,9 +15,10 @@ let t = Date.now();
  */
 async function boot() {
   vi.resetModules();
-  const [{ createApp }, { startSweeper }, queue, dispatcher, clock, db] = await Promise.all([
+  const [{ createApp }, { startSweeper }, queue, dispatcher, clock, db, notifier] = await Promise.all([
     import('../src/app.js'), import('../src/services/sweeper.js'), import('../src/services/queue.js'),
     import('../src/engine/dispatcher.js'), import('../src/lib/clock.js'), import('../src/lib/db.js'),
+    import('../src/services/notifier.js'),
   ]);
   clock.setNow(() => t);
   const server = createServer(createApp()).listen(0);
@@ -36,6 +37,7 @@ async function boot() {
       stopSweeper();
       server.closeAllConnections();
       await new Promise((resolve) => server.close(resolve));
+      await notifier.flushNotifications(); // test isolation only: this instance's notifications must not land in the next test's database
       await db.prisma.$disconnect();
     },
   };

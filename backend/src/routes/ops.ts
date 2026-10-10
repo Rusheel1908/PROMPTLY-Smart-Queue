@@ -8,6 +8,7 @@ import { resetDemo, spawnDemo, whatIf } from '../services/actions.js';
 import { applySuggestion, getSuggestions } from '../services/suggestions.js';
 import { metrics, snapshot, SNAPSHOT_VIEWS } from '../services/queue.js';
 import { staffStats } from '../services/staffStats.js';
+import { pushPublicKey } from '../services/push.js';
 
 export const opsRouter = Router();
 
@@ -29,6 +30,8 @@ const Lab = z.object({
 /** Read model for every screen. Without a staff session it is reduced to what the board shows: codes, no token ids. */
 opsRouter.get('/snapshot', loadStaff, handle((req) => snapshot().then(SNAPSHOT_VIEWS[req.staff ? 'staff' : 'public'])));
 opsRouter.get('/metrics', handle(() => metrics()));
+/** The VAPID public key browsers subscribe with; null when push is off (status pages then hide "Notify me"). */
+opsRouter.get('/push/key', handle(async () => ({ publicKey: pushPublicKey() })));
 
 opsRouter.post('/whatif', requireRole('whatif'), handle(async (req) => whatIf(WhatIf.parse(req.body).counters)));
 /** Supervisor suggestions: details only with a session (the WebSocket carries a bare "suggestions-updated" ping). */

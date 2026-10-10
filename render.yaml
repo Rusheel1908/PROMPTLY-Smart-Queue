@@ -20,4 +20,13 @@ services:
         sync: false # Neon connection string (direct, not -pooler), with sslmode=require
       - key: CORS_ORIGIN
         sync: false # the Vercel URL, e.g. https://promptly.vercel.app (comma-separate several)
+      - key: TZ
+        sync: false # the branch's time zone, e.g. Asia/Kolkata: times in notifications ("come back by 10:42") use it
+      # Web Push (npm run push:keys). Set all three, or none: without them alerts are in-page only.
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false # secret
+      - key: VAPID_SUBJECT
+        sync: false # mailto:you@yourbank.example or an https URL; push services contact it about problems
     # PORT is set by Render. Staff PINs (SEED_STAFF_PINS) are not set here: seeding runs once from a laptop (npm run db:setup).

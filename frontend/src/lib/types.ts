@@ -51,10 +51,15 @@ export interface PublicSnapshot extends Omit<Snapshot, 'counters' | 'tokens' | '
   recentCalls: Omit<Snapshot['recentCalls'][number], 'id'>[];
 }
 
+/** Customer notification events (backend/src/notify/rules.ts). */
+export type NotifyEvent = 'NEXT_UP' | 'CALLED' | 'RECALLED' | 'MISSED' | 'NO_SHOW' | 'BIG_DELAY';
+export interface TokenNotification { id: number; event: NotifyEvent; ts: string; title: string; body: string; urgency: 'normal' | 'high' }
+
 export interface TokenDetail extends Token {
   serviceName: string; counterName: string | null; ahead: number; queueSize: number;
   changes: { ts: string; deltaS: number; reason: string }[];
   child: { id: string; code: string; key: string } | null; // key: the child's own access key
+  notifications: TokenNotification[]; // newest first
 }
 
 export interface Announcement { code: string; counter: string; recall: boolean }

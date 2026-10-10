@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Promptly</title>
+    <meta name="theme-color" content="#1f6feb" />
+    <!-- Installable web app, so iPhones get Web Push once the status page is added to the home screen. The manifest has no
+         start_url on purpose: the installed app opens the page it was added from (the customer's own status link). -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Promptly" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f6feb'/%3E%3Cpath d='M18 5 9 18h6l-2 9 9-13h-6z' fill='white'/%3E%3C/svg%3E" />
   </head>
   <body>

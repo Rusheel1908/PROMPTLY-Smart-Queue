@@ -4,6 +4,7 @@ import { setNow } from '../src/lib/clock.js';
 import { prisma } from '../src/lib/db.js';
 import { hashPin } from '../src/lib/secret.js';
 import { createSession } from '../src/services/auth.js';
+import { flushNotifications } from '../src/services/notifier.js';
 
 type App = Parameters<typeof request>[0];
 
@@ -40,8 +41,9 @@ async function seedStaff() {
 
 /** Empty queue with two services and one counter that handles both, plus logged-in staff. */
 export async function resetDb() {
+  await flushNotifications(); // the last test's background notifications must not land in this one's database
   await prisma.$executeRawUnsafe(
-    'TRUNCATE "EtaChange", "Event", "Token", "CounterSkill", "Counter", "Service", "Session", "Staff" RESTART IDENTITY CASCADE',
+    'TRUNCATE "NotificationLog", "PushSubscription", "EtaChange", "Event", "Token", "CounterSkill", "Counter", "Service", "Session", "Staff" RESTART IDENTITY CASCADE',
   );
   const [deposits, loans] = await Promise.all([
     prisma.service.create({ data: { prefix: 'D', name: 'Deposits', targetWaitS: 900, priorMu: Math.log(4), priorSigma: 0.5 } }),

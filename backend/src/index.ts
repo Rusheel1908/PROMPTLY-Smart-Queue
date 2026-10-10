@@ -4,6 +4,7 @@ import { createApp } from './app.js';
 import { prisma } from './lib/db.js';
 import { attachRealtime, closeRealtime } from './realtime.js';
 import { stopLabJobs } from './services/labJobs.js';
+import { flushNotifications } from './services/notifier.js';
 import { startSuggestions } from './services/suggestions.js';
 import { startSweeper } from './services/sweeper.js';
 
@@ -18,6 +19,7 @@ const SHUTDOWN_STEPS: [string, () => Promise<unknown>][] = [
   ['stop sweeper', () => stopSweeper()],
   ['stop suggestions', () => stopSuggestions()],
   ['stop lab worker', stopLabJobs],
+  ['finish notifications', flushNotifications],
   ['close websockets', closeRealtime],
   ['close http server', () => httpClosed],
   ['disconnect database', () => prisma.$disconnect()],

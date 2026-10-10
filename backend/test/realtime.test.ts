@@ -7,6 +7,7 @@ import { WebSocket } from 'ws';
 import { createApp } from '../src/app.js';
 import { prisma } from '../src/lib/db.js';
 import { attachRealtime } from '../src/realtime.js';
+import { flushNotifications } from '../src/services/notifier.js';
 import { issue, as, resetDb } from './helpers.js';
 
 type Msg = { type: string; data: Record<string, unknown> };
@@ -53,6 +54,12 @@ describe('public broadcasts', () => {
     const [call, recall] = await announcements(2);
     expect(call.data).toEqual({ code: t.code, counter: 'Counter 1', recall: false });
     expect(recall.data).toEqual({ code: t.code, counter: 'Counter 1', recall: true });
+
+    // customer notifications ping the page with the public code only; the text is fetched with the token key
+    await flushNotifications();
+    const notify = messages.filter((m) => m.type === 'notify');
+    expect(notify.length).toBeGreaterThan(0);
+    notify.forEach((m) => expect(m.data).toEqual({ code: t.code }));
 
     // nothing pushed to the public socket (announce or queue pings) identifies the token
     const raw = JSON.stringify(messages);

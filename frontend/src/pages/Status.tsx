@@ -1,20 +1,22 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  AlertTriangle, ArrowRight, CheckCircle2, Coffee, History, Megaphone, PartyPopper, PhoneMissed, Shuffle, TrendingDown,
-  TrendingUp, XCircle,
+  AlertTriangle, ArrowRight, Bell, BellOff, BellRing, CheckCircle2, Clock, Coffee, History, Megaphone, PartyPopper, PhoneMissed,
+  Share, Shuffle, TrendingDown, TrendingUp, Volume2, VolumeX, X, XCircle, type LucideIcon,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { EtaBand } from '../components/EtaBand';
 import { Button, Card, Chip, Empty, Modal, Skeleton, useAction } from '../components/ui';
+import { alertUser, unlockAudioOnFirstTap, useMuted } from '../lib/alerts';
 import { api } from '../lib/api';
 import { CLASS_META, cx, fmtAgo, fmtClock, fmtMin, STATE_META, statusLink } from '../lib/format';
 import { useAnnouncements, useNow, useSocket, useThrottled } from '../lib/live';
-import type { TokenDetail, TokenState } from '../lib/types';
+import { currentEndpoint, enablePush, following, permission, pushSupport } from '../lib/push';
+import type { NotifyEvent, TokenDetail, TokenNotification, TokenState } from '../lib/types';
 
 /** The ticket's access key travels as ?k= in the QR link and is sent on every call for this token. */
-const tokenApi = (id: string, key: string) => <T,>(path = '', json?: unknown) =>
-  api<T>(`/tokens/${id}${path}`, { json, headers: { 'x-token-key': key } });
+const tokenApi = (id: string, key: string) => <T,>(path = '', json?: unknown, method?: string) =>
+  api<T>(`/tokens/${id}${path}`, { json, method, headers: { 'x-token-key': key } });
 
 export default function Status() {
   const { id = '' } = useParams();
@@ -24,17 +26,23 @@ export default function Status() {
   const [missing, setMissing] = useState(false);
   const [yourTurn, setYourTurn] = useState(false);
   const now = useNow(5000);
+  const { muted, toggle: toggleMute } = useMuted();
+  const banner = useNotificationBanner(t, muted);
+  useEffect(unlockAudioOnFirstTap, []);
 
   // a wrong or missing key gets the same 404 as an unknown token
   const load = useCallback(() => call<TokenDetail>().then(setT).catch(() => setMissing(true)), [call]);
   useEffect(() => { setT(null); setMissing(false); load(); }, [load]);
   const onPing = useThrottled(load);
-  useSocket((m) => { m.type === 'queue' && onPing(); });
+  useSocket((m) => {
+    m.type === 'queue' && onPing();
+    // a notification for this code: fetch it now (with our key), not at the next throttled refresh
+    m.type === 'notify' && !!t && (m.data as { code: string }).code === t.code && load();
+  });
   useAnnouncements((a) => {
     const mine = !!t && a.code === t.code;
-    mine && setYourTurn(true);
-    mine && navigator.vibrate?.([300, 120, 300]);
-    mine && speak(`Token ${a.code.split('').join(' ')}, please go to ${a.counter}`);
+    mine && setYourTurn(true); // the beep and vibration come with the CALLED notification
+    mine && !muted && speak(`Token ${a.code.split('').join(' ')}, please go to ${a.counter}`);
   });
 
   const phase = (missing && 'missing') || (t && 'ready') || 'loading';
@@ -47,11 +55,13 @@ export default function Status() {
     ready: () => (
       <div className="mx-auto flex max-w-xl flex-col gap-4">
         <Header t={t!} />
+        <AlertBanner n={banner.shown} live={banner.live} onClose={banner.dismiss} />
         <AnimatePresence mode="wait">
           <motion.div key={t!.state} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
             {STATE_PANELS[t!.state]({ t: t!, now, reload: load, call })}
           </motion.div>
         </AnimatePresence>
+        <Alerts t={t!} call={call} muted={muted} onToggleMute={toggleMute} />
         <WhyChanged t={t!} now={now} />
         <YourTurn open={yourTurn && t!.state === 'CALLED'} t={t!} onClose={() => setYourTurn(false)} />
       </div>
@@ -59,6 +69,153 @@ export default function Status() {
   };
   return VIEWS[phase]();
 }
+
+/* ---------- in-page alerts ---------- */
+
+/** Older notifications are shown on open only if this recent; anything older is history, not news. */
+const FRESH_ON_OPEN_MS = 15 * 60_000;
+
+/**
+ * The banner shows the newest notification. Ones already there when the page opened appear quietly;
+ * ones that arrive while it is open also beep and vibrate (unless muted).
+ */
+function useNotificationBanner(t: TokenDetail | null, muted: boolean) {
+  const seen = useRef<{ tokenId: string; ids: Set<number> } | null>(null);
+  const [shown, setShown] = useState<TokenNotification | null>(null);
+  const [live, setLive] = useState(false);
+  const mutedRef = useRef(muted);
+  mutedRef.current = muted;
+
+  useEffect(() => {
+    if (!t) return;
+    const list = t.notifications ?? [];
+    if (seen.current?.tokenId !== t.id) { // first load of this token: nothing is new yet
+      seen.current = { tokenId: t.id, ids: new Set(list.map((n) => n.id)) };
+      const latest = list[0];
+      setShown(latest && Date.now() - new Date(latest.ts).getTime() < FRESH_ON_OPEN_MS ? latest : null);
+      setLive(false);
+      return;
+    }
+    const fresh = list.filter((n) => !seen.current!.ids.has(n.id));
+    if (fresh.length === 0) return;
+    fresh.forEach((n) => seen.current!.ids.add(n.id));
+    setShown(fresh[0]);
+    setLive(true);
+    mutedRef.current || alertUser(fresh[0].urgency);
+  }, [t]);
+
+  return { shown, live, dismiss: () => setShown(null) };
+}
+
+const EVENT_META: Record<NotifyEvent, { icon: LucideIcon; tone: string }> = {
+  NEXT_UP: { icon: BellRing, tone: 'bg-blue-50 text-blue-900 ring-blue-200' },
+  CALLED: { icon: Megaphone, tone: 'bg-amber-50 text-amber-900 ring-amber-300' },
+  RECALLED: { icon: Megaphone, tone: 'bg-orange-50 text-orange-900 ring-orange-300' },
+  MISSED: { icon: PhoneMissed, tone: 'bg-orange-50 text-orange-900 ring-orange-300' },
+  NO_SHOW: { icon: XCircle, tone: 'bg-red-50 text-red-900 ring-red-200' },
+  BIG_DELAY: { icon: Clock, tone: 'bg-slate-50 text-slate-900 ring-slate-200' },
+};
+
+function AlertBanner({ n, live, onClose }: { n: TokenNotification | null; live: boolean; onClose: () => void }) {
+  const meta = n && (EVENT_META[n.event] ?? EVENT_META.NEXT_UP);
+  return (
+    <AnimatePresence>
+      {n && meta && (
+        <motion.div key={n.id} role="status" aria-live="assertive"
+          initial={{ opacity: 0, y: -12, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: live ? [1, 1.02, 1] : 1 }} exit={{ opacity: 0, y: -8 }}
+          className={cx('flex items-start gap-3 rounded-2xl p-4 ring-1', meta.tone, live && n.urgency === 'high' && 'ring-2')}>
+          <meta.icon className={cx('mt-0.5 size-5 shrink-0', live && 'animate-bounce')} />
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold">{n.title}</div>
+            <div className="text-sm opacity-90">{n.body}</div>
+            <div className="mt-1 text-xs opacity-60">{fmtClock(n.ts)}</div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Dismiss" className="-m-1 rounded-lg p-1 opacity-60 hover:opacity-100">
+            <X className="size-4" />
+          </button>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+/** Nothing more will happen to these tokens, so there is nothing to alert about. */
+const FINISHED: TokenState[] = ['DONE', 'CANCELLED', 'NO_SHOW', 'REDIRECTED'];
+
+function Alerts({ t, call, muted, onToggleMute }: { t: TokenDetail; call: PanelProps['call']; muted: boolean; onToggleMute: () => void }) {
+  if (FINISHED.includes(t.state)) return null;
+  return (
+    <Card className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 font-semibold"><Bell className="size-4" /> Alerts</div>
+        <Button variant="ghost" size="sm" icon={muted ? VolumeX : Volume2} onClick={onToggleMute} aria-pressed={muted}>
+          {muted ? 'Sound off' : 'Sound on'}
+        </Button>
+      </div>
+      <p className="text-sm text-ink-2">
+        While this page is open, it {muted ? 'shows a banner' : 'beeps, vibrates and shows a banner'} when you're almost up, when you're called, and if your time changes a lot.
+      </p>
+      <NotifyMe t={t} call={call} />
+    </Card>
+  );
+}
+
+type PushView = 'ios-home-screen' | 'unsupported' | 'blocked' | 'on' | 'off';
+
+/** "Notify me": Web Push, so alerts arrive with the page closed. Permission is asked only when the button is tapped. */
+function NotifyMe({ t, call }: { t: TokenDetail; call: PanelProps['call'] }) {
+  const support = useMemo(pushSupport, []);
+  const [publicKey, setPublicKey] = useState<string | null>(null);
+  const [on, setOn] = useState(() => following.get(t.id) && permission() === 'granted');
+  const [blocked, setBlocked] = useState(() => permission() === 'denied');
+  const { run, busy } = useAction();
+  useEffect(() => {
+    api<{ publicKey: string | null }>('/push/key').then((r) => setPublicKey(r.publicKey)).catch(() => setPublicKey(null));
+  }, []);
+  if (!publicKey) return null; // push is not set up on this server: in-page alerts only
+
+  const turnOn = async () => {
+    const result = await run('push', () => enablePush(publicKey, (sub) => call('/push', sub)));
+    result === 'granted' && (following.set(t.id, true), setOn(true));
+    result === 'denied' && setBlocked(true);
+  };
+  const turnOff = async () => {
+    const done = await run('push', async () => {
+      const endpoint = await currentEndpoint();
+      endpoint && (await call('/push', { endpoint }, 'DELETE'));
+      return true;
+    });
+    done && (following.set(t.id, false), setOn(false));
+  };
+
+  const view: PushView = support !== 'ready' ? support : blocked ? 'blocked' : on ? 'on' : 'off';
+  const VIEWS: Record<PushView, () => ReactNode> = {
+    'ios-home-screen': () => (
+      <Hint icon={Share}>
+        On iPhone, alerts with the page closed need Promptly on your home screen: tap <b>Share</b>, then <b>Add to Home Screen</b>, and open it from there.
+      </Hint>
+    ),
+    unsupported: () => <Hint icon={BellOff}>This browser can't alert you once the page is closed, so keep this page open.</Hint>,
+    blocked: () => <Hint icon={BellOff}>Notifications are blocked for this site. Allow them in your browser settings to get alerts with the page closed.</Hint>,
+    off: () => (
+      <div className="flex flex-wrap items-center gap-3">
+        <Button icon={Bell} loading={busy === 'push'} onClick={turnOn}>Notify me</Button>
+        <span className="text-sm text-muted">Get alerts on this phone even when this page is closed.</span>
+      </div>
+    ),
+    on: () => (
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="flex items-center gap-2 text-sm font-semibold text-teal"><BellRing className="size-4" /> Notifications on for {t.code}</span>
+        <Button variant="ghost" size="sm" icon={BellOff} loading={busy === 'push'} onClick={turnOff}>Stop</Button>
+      </div>
+    ),
+  };
+  return <>{VIEWS[view]()}</>;
+}
+
+const Hint = ({ icon: Icon, children }: { icon: LucideIcon; children: ReactNode }) => (
+  <div className="flex items-start gap-2 rounded-xl bg-card p-3 text-sm text-ink-2"><Icon className="mt-0.5 size-4 shrink-0" /><span>{children}</span></div>
+);
 
 function speak(text: string) {
   try {

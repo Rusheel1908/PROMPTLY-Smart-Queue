@@ -68,6 +68,13 @@ Values set in the shell take precedence over `backend/.env`, so your local dev d
    | `DATABASE_URL` | the Neon string from step 1 |
    | `CORS_ORIGIN` | your Vercel URL if you already know it (e.g. `https://promptly.vercel.app`), else `http://localhost:5173` for now and fix it in step 4 |
 
+   It also asks for the optional notification settings (leave the VAPID ones empty to skip push for now):
+
+   | Variable | Value |
+   |---|---|
+   | `TZ` | the branch's time zone, e.g. `Asia/Kolkata`, so "come back by 10:42" in notifications is local time |
+   | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | from `npm run push:keys` (see [Phone notifications](#phone-notifications-web-push)) |
+
    Set by the Blueprint itself: `NODE_ENV=production`, `TRUST_PROXY=1`. Render sets `PORT`.
 3. **Apply**. The build runs `npm ci --include=dev && npx prisma generate && npm run build`, then `npm start`
    (Node 22, from `engines` in `backend/package.json`). Render waits for `GET /api/health` to answer
@@ -115,6 +122,23 @@ links), `/ops`, `/lab` and page refreshes load the app instead of a 404.
 - If screens load but show no data: the browser console shows a CORS error (fix `CORS_ORIGIN`) or requests to the
   wrong host (fix `VITE_API_URL` and redeploy). WebSockets from an origin not in `CORS_ORIGIN` are refused with 403.
 
+## Phone notifications (Web Push)
+
+Customers who tap **Notify me** on their status page get alerts with the page closed: almost up, called, last call,
+missed turn (with the time to come back), no-show and big delays. Without push they still get in-page alerts (banner,
+beep, vibration) while the page is open.
+
+1. On your laptop: `cd backend && npm run push:keys`. It prints three lines.
+2. In Render, set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (secret) and `VAPID_SUBJECT` (replace the example
+   `mailto:` with a real contact). All three or none: a partial set stops the API at startup with a clear message.
+3. Nothing to set on Vercel: the frontend fetches the public key from `GET /api/push/key`, and serves the service
+   worker (`/sw.js`) and web app manifest from `frontend/public`.
+
+Keep the same keys from then on: new keys invalidate every subscription (customers would have to tap Notify me again).
+Push needs HTTPS (Vercel provides it). Android Chrome and desktop browsers work in a normal tab; an iPhone only after
+**Share → Add to Home Screen**, opened from the home screen (the status page shows this hint). The API only sends to
+the browsers' push services (`PUSH_HOSTS` in `backend/src/config.ts`).
+
 ## Environment variables
 
 **Render (`promptly-api`)**
@@ -126,6 +150,10 @@ links), `/ops`, `/lab` and page refreshes load the app instead of a 404.
 | `NODE_ENV` | `production` (Blueprint) | no |
 | `TRUST_PROXY` | `1` (Blueprint) | no |
 | `PORT` | set by Render | no |
+| `TZ` | branch time zone, e.g. `Asia/Kolkata` (optional) | no |
+| `VAPID_PUBLIC_KEY` | from `npm run push:keys` (optional, with the other two) | no |
+| `VAPID_PRIVATE_KEY` | from `npm run push:keys` | yes |
+| `VAPID_SUBJECT` | `mailto:` or `https:` contact | no |
 
 **Vercel**
 

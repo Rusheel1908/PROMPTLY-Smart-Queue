@@ -12,6 +12,24 @@ describe('staff authentication', () => {
   });
 });
 
+describe('web push keys', () => {
+  const KEYS = { VAPID_PUBLIC_KEY: 'BPub_key-1', VAPID_PRIVATE_KEY: 'priv_key-1', VAPID_SUBJECT: 'mailto:ops@example.com' };
+
+  it('all three or none: none (or empty values) means push is off, not an error', () => {
+    expect(parseConfig(BASE).data?.VAPID_PUBLIC_KEY).toBeUndefined();
+    expect(parseConfig({ ...BASE, VAPID_PUBLIC_KEY: '', VAPID_PRIVATE_KEY: '', VAPID_SUBJECT: '' }).success).toBe(true);
+    expect(parseConfig({ ...BASE, ...KEYS }).data).toMatchObject(KEYS);
+  });
+
+  it('a partial set names each missing variable; a bad subject or key is rejected', () => {
+    const partial = parseConfig({ ...BASE, VAPID_PUBLIC_KEY: KEYS.VAPID_PUBLIC_KEY });
+    expect(describeProblems(partial.error!)).toContain('VAPID_PRIVATE_KEY: is required when any of');
+    expect(partial.error!.issues.map((i) => i.path[0])).toEqual(['VAPID_PRIVATE_KEY', 'VAPID_SUBJECT']);
+    expect(parseConfig({ ...BASE, ...KEYS, VAPID_SUBJECT: 'ops@example.com' }).error!.issues[0].path).toEqual(['VAPID_SUBJECT']);
+    expect(parseConfig({ ...BASE, ...KEYS, VAPID_PRIVATE_KEY: 'has spaces=' }).error!.issues[0].path).toEqual(['VAPID_PRIVATE_KEY']);
+  });
+});
+
 describe('other variables', () => {
   it('dev defaults, and parses CORS and proxy settings', () => {
     const r = parseConfig({

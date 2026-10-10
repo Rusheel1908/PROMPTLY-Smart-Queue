@@ -9,6 +9,7 @@ import { EngineState, EngineToken, MIN } from '../engine/types.js';
 import * as clock from '../lib/clock.js';
 import { prisma } from '../lib/db.js';
 import { broadcast } from '../realtime.js';
+import { onQueueEvent, onReplan } from './notifier.js';
 
 export const FORECAST_RUNS = 300;
 const ACTIVE = ['WAITING', 'CALLED', 'SERVING'] as const;
@@ -30,11 +31,14 @@ export const queueSignals = new EventEmitter();
 
 /* ---------- event log ---------- */
 
+/** Append an event. Once it is committed, customer notifications for it start in the background. */
 export async function logEvent(
   type: string,
   data: { tokenId?: string; counterId?: string; payload?: Prisma.InputJsonValue; actor?: string } = {},
 ): Promise<number> {
-  return (await prisma.event.create({ data: { type, ...data } })).seq;
+  const { seq } = await prisma.event.create({ data: { type, ...data } });
+  onQueueEvent(type, data);
+  return seq;
 }
 
 /* ---------- world → engine ---------- */
@@ -119,15 +123,17 @@ export async function replan(reason: string, causeEvent?: number, thresholdMs = 
   const shifts = etaShifts(prev, bands, thresholdMs);
   const asDate = (ms?: number) => (ms == null ? null : new Date(ms));
 
-  await prisma.$transaction([
+  const written = await prisma.$transaction([
+    prisma.etaChange.createManyAndReturn({
+      data: shifts.map((x) => ({ tokenId: x.tokenId, deltaS: x.deltaS, reason, causeEvent })),
+      select: { id: true, tokenId: true, deltaS: true },
+    }),
     ...waiting.map((t) => prisma.token.update({
       where: { id: t.id },
       data: { etaP50: asDate(bands[t.id]?.p50), etaP90: asDate(bands[t.id]?.p90) },
     })),
-    prisma.etaChange.createMany({
-      data: shifts.map((x) => ({ tokenId: x.tokenId, deltaS: x.deltaS, reason, causeEvent })),
-    }),
   ]);
+  onReplan({ waiting, bands, changes: written[0] as { id: number; tokenId: string; deltaS: number }[], reason, now });
   quotes = Object.fromEntries(w.services.map((svc) => [svc.id, toQuote(quote(s, svc.id, now), now)]));
   broadcast('queue', { reason, shifts: shifts.length });
   queueSignals.emit('replanned', { atRisk: waiting.filter((t) => atRisk(t.promiseP90?.getTime() ?? null, bands[t.id])).length });

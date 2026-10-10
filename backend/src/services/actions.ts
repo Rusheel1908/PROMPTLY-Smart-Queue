@@ -13,6 +13,7 @@ import { prisma } from '../lib/db.js';
 import { fail, must } from '../lib/http.js';
 import { newTokenSecret, safeEqual } from '../lib/secret.js';
 import { broadcast } from '../realtime.js';
+import { recentNotifications } from './notifier.js';
 import {
   CounterOverride, FORECAST_RUNS, loadWorld, logEvent, publicToken, queueSignals, replan, serial, toEngine,
 } from './queue.js';
@@ -82,9 +83,10 @@ export async function tokenDetail(id: string) {
     where: { id },
     include: { service: true, counter: true, etaChanges: { orderBy: { ts: 'desc' }, take: 20 } },
   })) ?? fail(404, 'Token not found');
-  const [waiting, child] = await Promise.all([
+  const [waiting, child, notifications] = await Promise.all([
     prisma.token.findMany({ where: { state: 'WAITING', etaP50: { not: null } }, select: { id: true, etaP50: true } }),
     prisma.token.findFirst({ where: { parentTokenId: id }, select: { id: true, code: true, secret: true } }),
+    recentNotifications(id),
   ]);
   const ahead = waiting.filter((t) => token.etaP50 && t.etaP50! < token.etaP50).length;
   const pos = Object.fromEntries(waiting.filter((t) => t.id === token.id).map((t) => [t.id, ahead]));
@@ -96,6 +98,7 @@ export async function tokenDetail(id: string) {
     changes: token.etaChanges.map((c) => ({ ts: c.ts, deltaS: c.deltaS, reason: c.reason })),
     // the caller proved access to the parent, so they may follow the redirect
     child: child && { id: child.id, code: child.code, key: child.secret },
+    notifications, // newest first; the status page alerts on ids it has not seen yet
   };
 }
 

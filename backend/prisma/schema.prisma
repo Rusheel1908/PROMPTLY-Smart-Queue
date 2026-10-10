@@ -91,6 +91,8 @@ model Token {
   parentTokenId   String?
   secret          String      @unique // per-token access key from the QR link, base64url(24 random bytes)
   etaChanges      EtaChange[]
+  notifications   NotificationLog[]
+  pushSubs        PushSubscription[]
 
   @@index([state, serviceId])
 }
@@ -113,6 +115,34 @@ model EtaChange {
   deltaS     Int
   reason     String
   causeEvent Int?
+}
+
+/// One row per notification a customer was sent. The unique key is the dedupe: a second insert for the same
+/// (token, dedupeKey) fails, so each event reaches a customer once however often the pipeline sees it.
+model NotificationLog {
+  id        Int      @id @default(autoincrement())
+  tokenId   String
+  token     Token    @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  event     String // NotifyEvent, e.g. CALLED
+  dedupeKey String // "CALLED#0" (event#round), "BIG_DELAY#<etaChangeId>"
+  vars      Json // message variables (code, counter, time…); text is rendered when read, so it can be translated
+  pushed    Int      @default(0) // push subscriptions it reached
+  ts        DateTime @default(now())
+
+  @@unique([tokenId, dedupeKey])
+}
+
+/// A browser's Web Push subscription, following one token. Subscribing again from the same browser moves it.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  tokenId   String
+  token     Token    @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([tokenId])
 }
 
 enum StaffRole {
