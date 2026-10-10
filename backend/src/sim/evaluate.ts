@@ -221,15 +221,21 @@ function summarize(id: string, spec: PolicySpec, days: DayResult[]): PolicyResul
   };
 }
 
-export interface EvalOptions { days?: number; seed?: number; runs?: number; sampleEvery?: number; policies?: string[] }
+export interface EvalOptions {
+  days?: number; seed?: number; runs?: number; sampleEvery?: number; policies?: string[];
+  onProgress?: (done: number, total: number) => void; // called after each policy × day
+}
 
 /** Every policy runs on identical synthetic days (same seeds). */
 export function evaluate(opts: EvalOptions = {}) {
-  const { days = 8, seed = 1, runs = 40, sampleEvery = 3, policies = Object.keys(SPECS) } = opts;
+  const { days = 8, seed = 1, runs = 40, sampleEvery = 3, policies = Object.keys(SPECS), onProgress } = opts;
   const started = Date.now();
   const dayList = Array.from({ length: days }, (_, d) => generateDay(seed + d));
-  const results = policies.filter((id) => SPECS[id]).map((id) => summarize(
-    id, SPECS[id], dayList.map((arr, d) => simulateDay(SPECS[id], arr, runs, sampleEvery, seed * 1000 + d)),
+  const ids = policies.filter((id) => SPECS[id]);
+  let done = 0;
+  const step = <T>(r: T) => (onProgress?.(++done, ids.length * days), r);
+  const results = ids.map((id) => summarize(
+    id, SPECS[id], dayList.map((arr, d) => step(simulateDay(SPECS[id], arr, runs, sampleEvery, seed * 1000 + d))),
   ));
   return {
     synthetic: true as const,
