@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { handle, isStaff, requireStaff } from '../lib/http.js';
-import { evaluate, SPECS } from '../sim/evaluate.js';
+import { fail, handle, isStaff, requireStaff } from '../lib/http.js';
+import { SPECS } from '../sim/evaluate.js';
+import precomputed from '../sim/precomputed.json' with { type: 'json' };
+import { getLabJob, startLabJob } from '../services/labJobs.js';
 import { resetDemo, spawnDemo, whatIf } from '../services/actions.js';
 import { metrics, snapshot, SNAPSHOT_VIEWS } from '../services/queue.js';
 
@@ -31,7 +33,11 @@ opsRouter.post('/whatif', requireStaff, handle(async (req) => whatIf(WhatIf.pars
 opsRouter.post('/demo/spawn', requireStaff, handle(async (req) => spawnDemo(Spawn.parse(req.body ?? {}).count)));
 opsRouter.post('/demo/reset', requireStaff, handle(() => resetDemo()));
 
-/** Simulation Lab: every policy on identical SYNTHETIC days. Runs synchronously (a few seconds). */
+/** Simulation Lab: every policy on identical SYNTHETIC days. */
 opsRouter.get('/lab/policies', handle(async () =>
   Object.entries(SPECS).map(([id, s]) => ({ id, label: s.label, group: s.group, eta: s.eta, miss: s.miss }))));
-opsRouter.post('/lab/run', handle(async (req) => evaluate(Lab.parse(req.body ?? {}))));
+/** The saved full evaluation (`npm run lab:snapshot`), so the page shows something instantly. */
+opsRouter.get('/lab/latest', handle(async () => precomputed));
+/** Live runs go to a worker thread (one at a time); the client polls the job or waits for a "lab" ping. */
+opsRouter.post('/lab/run', requireStaff, handle(async (req) => ({ jobId: startLabJob(Lab.parse(req.body ?? {})).id }), 202));
+opsRouter.get('/lab/jobs/:id', requireStaff, handle(async (req) => getLabJob(req.params.id) ?? fail(404, 'Lab job not found')));
