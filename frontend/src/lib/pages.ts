@@ -1,0 +1,34 @@
+import { lazy } from 'react';
+
+/** One dynamic import per page, so each page (and the libraries only it uses) is its own chunk. */
+const LOADERS = {
+  '/': () => import('../pages/Kiosk'),
+  '/counter': () => import('../pages/Counter'),
+  '/board': () => import('../pages/Board'),
+  '/status': () => import('../pages/Status'),
+  '/ops': () => import('../pages/Ops'),
+  '/lab': () => import('../pages/Lab'),
+} as const;
+
+type PagePath = keyof typeof LOADERS;
+
+export const Pages = {
+  Kiosk: lazy(LOADERS['/']),
+  Counter: lazy(LOADERS['/counter']),
+  Board: lazy(LOADERS['/board']),
+  Status: lazy(LOADERS['/status']),
+  Ops: lazy(LOADERS['/ops']),
+  Lab: lazy(LOADERS['/lab']),
+};
+
+/** Start downloading a page's chunk ahead of navigation (nav hover/focus). The browser caches the import, so the later lazy() render is instant. */
+export function prefetchPage(path: string) {
+  const key = (path.startsWith('/status') ? '/status' : path) as PagePath;
+  LOADERS[key]?.().catch(() => undefined); // a failed prefetch just means lazy() fetches it again on navigation
+}
+
+/** Spread onto a link to prefetch its page on hover, keyboard focus or the start of a tap. */
+export const prefetchOn = (path: string) => {
+  const go = () => prefetchPage(path);
+  return { onMouseEnter: go, onFocus: go, onTouchStart: go };
+};

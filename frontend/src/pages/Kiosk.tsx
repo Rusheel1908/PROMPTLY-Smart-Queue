@@ -8,6 +8,7 @@ import { Button, Card, Modal, Skeleton, useAction } from '../components/ui';
 import { api } from '../lib/api';
 import { CLASS_META, cx, fmtClock, fmtMin, serviceIcon, statusLink } from '../lib/format';
 import { useSnapshot } from '../lib/live';
+import { prefetchOn } from '../lib/pages';
 import type { PublicSnapshot, Service, Token, TokenClass } from '../lib/types';
 
 type Issued = Token & { serviceName: string; secret: string };
@@ -184,7 +185,7 @@ function TicketOverlay({ t, onClose }: { t: Issued; onClose: () => void }) {
           <div className="rounded-xl bg-white p-2 ring-1 ring-line"><QRCodeSVG value={url} size={96} /></div>
         </div>
         <div className="flex gap-2 px-6 pb-6">
-          <Link to={link} className="flex-1"><Button className="w-full" icon={ExternalLink}>Track live</Button></Link>
+          <Link to={link} className="flex-1" {...prefetchOn(link)}><Button className="w-full" icon={ExternalLink}>Track live</Button></Link>
           <Button variant="ghost" onClick={onClose} icon={ArrowRight}>Done</Button>
         </div>
         <motion.div className="h-1 bg-brand" initial={{ width: '100%' }} animate={{ width: '0%' }} transition={{ duration: TICKET_SECONDS, ease: 'linear' }} />

@@ -98,6 +98,13 @@ export const Skeleton = ({ className }: { className?: string }) => (
   <div className={cx('animate-pulse rounded-xl bg-slate-200/70', className)} />
 );
 
+/** Suspense fallback while a page's chunk downloads (usually only on the first visit). */
+export const PageLoader = () => (
+  <div className="grid min-h-[50vh] place-items-center" role="status" aria-label="Loading page">
+    <Loader2 className="size-6 animate-spin text-muted" />
+  </div>
+);
+
 /* ---------- Segmented control with sliding pill ---------- */
 
 export function Segmented<T extends string>({ value, options, onChange, id }: {

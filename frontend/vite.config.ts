@@ -4,6 +4,18 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    rollupOptions: {
+      output: {
+        // React + router change rarely, so they get one long-cached vendor chunk; everything else is split automatically per page.
+        manualChunks(id) {
+          if (/[\\/]node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom|@remix-run[\\/]router)[\\/]/.test(id)) return 'vendor';
+          // Recharts alone is ~380 kB; its lodash/d3 internals go in their own chunk (still only loaded by Ops and Lab) so no chunk passes ~300 kB.
+          if (/[\\/]node_modules[\\/](lodash|victory-vendor|d3-[^\\/]+|internmap)[\\/]/.test(id)) return 'charts-deps';
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {

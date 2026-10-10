@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { cx } from '../lib/format';
 import { useConnected, useNow } from '../lib/live';
+import { prefetchOn } from '../lib/pages';
 import { StaffBadge } from './StaffGate';
 import { LiveDot } from './ui';
 
@@ -31,7 +32,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </NavLink>
           <nav className="flex flex-1 items-center gap-1 overflow-x-auto">
             {LINKS.map(({ to, label, icon: Icon }) => (
-              <NavLink key={to} to={to} end={to === '/'}
+              <NavLink key={to} to={to} end={to === '/'} {...prefetchOn(to)}
                 className={({ isActive }) => cx('relative flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors', isActive ? 'text-white' : 'text-white/60 hover:text-white')}>
                 {({ isActive }) => (
                   <>
