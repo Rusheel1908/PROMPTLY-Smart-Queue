@@ -192,3 +192,25 @@ export async function snapshot() {
 
 const publicTokenOrNull = (t: Token | undefined, now: number, pos: Record<string, number>) =>
   (t ? publicToken(t, now, pos) : null);
+
+/* ---------- snapshot views: staff see everything, the public sees only what the board shows ---------- */
+
+type Snapshot = Awaited<ReturnType<typeof snapshot>>;
+type PublicToken = ReturnType<typeof publicToken>;
+
+/** Allowlist, not a denylist: a field added to publicToken later stays private until listed here. */
+const boardToken = (t: PublicToken) => ({
+  code: t.code, serviceId: t.serviceId, state: t.state, counterId: t.counterId,
+  etaMin: t.etaMin, position: t.position, unavailable: t.unavailable,
+});
+
+export const SNAPSHOT_VIEWS: Record<'staff' | 'public', (s: Snapshot) => object> = {
+  staff: (s: Snapshot) => s,
+  public: (s: Snapshot) => ({
+    ...s,
+    counters: s.counters.map((c) => ({ id: c.id, name: c.name, status: c.status, current: c.current && boardToken(c.current) })),
+    tokens: s.tokens.map(boardToken),
+    recentCalls: s.recentCalls.map(({ id: _id, ...call }) => call),
+    events: [], // the event log is an Ops feature
+  }),
+};

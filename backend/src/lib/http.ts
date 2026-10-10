@@ -1,4 +1,5 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
+import { safeEqual } from './secret.js';
 
 export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -20,7 +21,7 @@ export const handle = (fn: (req: Request, res: Response) => Promise<unknown>, st
 
 const STAFF_PIN = () => process.env.STAFF_PIN ?? '1234';
 
-export const isStaff = (req: Request) => req.header('x-staff-pin') === STAFF_PIN();
+export const isStaff = (req: Request) => safeEqual(req.header('x-staff-pin'), STAFF_PIN());
 
 /** Staff-only routes: a shared PIN stands in for a role-scoped session in this MVP. */
 export const requireStaff: RequestHandler = (req, _res, next) => {

@@ -21,6 +21,9 @@ export interface Counter {
   id: string; name: string; status: CounterStatus; skills: string[]; current: Token | null;
 }
 
+/** What the public snapshot carries per token: board fields only, no token id. */
+export type BoardToken = Pick<Token, 'code' | 'serviceId' | 'state' | 'counterId' | 'etaMin' | 'position' | 'unavailable'>;
+
 export interface QueueEvent {
   seq: number; ts: string; type: string; payload: Record<string, unknown> | null; code: string | null; counter: string | null;
 }
@@ -40,13 +43,20 @@ export interface Snapshot {
   metrics: Metrics;
 }
 
+/** Snapshot without the staff PIN (Board, Kiosk). The staff Snapshot is a superset of it. */
+export interface PublicSnapshot extends Omit<Snapshot, 'counters' | 'tokens' | 'recentCalls'> {
+  counters: (Pick<Counter, 'id' | 'name' | 'status'> & { current: BoardToken | null })[];
+  tokens: BoardToken[];
+  recentCalls: Omit<Snapshot['recentCalls'][number], 'id'>[];
+}
+
 export interface TokenDetail extends Token {
   serviceName: string; counterName: string | null; ahead: number; queueSize: number;
   changes: { ts: string; deltaS: number; reason: string }[];
-  child: { id: string; code: string } | null;
+  child: { id: string; code: string; key: string } | null; // key: the child's own access key
 }
 
-export interface Announcement { code: string; tokenId: string; counter: string; recall: boolean }
+export interface Announcement { code: string; counter: string; recall: boolean }
 
 export interface LabPolicyResult {
   id: string; label: string; group: 'baseline' | 'fairline' | 'ablation';

@@ -74,3 +74,6 @@ export const fmtDuration = (ms: number) => {
 export const pct = (x: number | null | undefined) => (x == null ? '—' : `${Math.round(x * 100)}%`);
 
 export const cx = (...xs: (string | false | null | undefined)[]) => xs.filter(Boolean).join(' ');
+
+/** A customer's private tracking link: the token id plus its access key (from the ticket QR). */
+export const statusLink = (id: string, key: string) => `/status/${id}?k=${encodeURIComponent(key)}`;

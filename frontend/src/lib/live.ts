@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, subscribe } from './api';
-import type { Announcement, Snapshot } from './types';
+import type { Announcement, PublicSnapshot, Snapshot } from './types';
 
 type Listener = (msg: { type: string; data: unknown }) => void;
 
@@ -38,9 +38,12 @@ export function useConnected() {
   return c;
 }
 
-/** Live queue snapshot: fetched once, re-fetched (coalesced) on every "queue" ping. */
-export function useSnapshot() {
-  const [snap, setSnap] = useState<Snapshot | null>(null);
+/**
+ * Live queue snapshot: fetched once, re-fetched (coalesced) on every "queue" ping.
+ * Staff screens get the full Snapshot (the api helper sends the PIN); public screens type it as PublicSnapshot.
+ */
+export function useSnapshot<S extends PublicSnapshot = Snapshot>() {
+  const [snap, setSnap] = useState<S | null>(null);
   const [error, setError] = useState<string | null>(null);
   const inflight = useRef(false);
   const queued = useRef(false);
@@ -55,7 +58,7 @@ export function useSnapshot() {
     inflight.current = true;
     while (queued.current) {
       queued.current = false;
-      await api<Snapshot>('/snapshot').then((s) => { setSnap(s); setError(null); }).catch((e) => setError(e.message));
+      await api<S>('/snapshot').then((s) => { setSnap(s); setError(null); }).catch((e) => setError(e.message));
     }
     inflight.current = false;
   }

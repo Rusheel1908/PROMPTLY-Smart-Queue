@@ -3,27 +3,34 @@ import {
   AlertTriangle, ArrowRight, CheckCircle2, Coffee, History, Megaphone, PartyPopper, PhoneMissed, Shuffle, TrendingDown,
   TrendingUp, XCircle,
 } from 'lucide-react';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { EtaBand } from '../components/EtaBand';
 import { Button, Card, Chip, Empty, Modal, Skeleton, useAction } from '../components/ui';
 import { api } from '../lib/api';
-import { CLASS_META, cx, fmtAgo, fmtClock, fmtMin, STATE_META } from '../lib/format';
+import { CLASS_META, cx, fmtAgo, fmtClock, fmtMin, STATE_META, statusLink } from '../lib/format';
 import { useAnnouncements, useNow, useSocket } from '../lib/live';
 import type { TokenDetail, TokenState } from '../lib/types';
 
+/** The ticket's access key travels as ?k= in the QR link and is sent on every call for this token. */
+const tokenApi = (id: string, key: string) => <T,>(path = '', json?: unknown) =>
+  api<T>(`/tokens/${id}${path}`, { json, headers: { 'x-token-key': key } });
+
 export default function Status() {
   const { id = '' } = useParams();
+  const key = useSearchParams()[0].get('k') ?? '';
+  const call = useMemo(() => tokenApi(id, key), [id, key]);
   const [t, setT] = useState<TokenDetail | null>(null);
   const [missing, setMissing] = useState(false);
   const [yourTurn, setYourTurn] = useState(false);
   const now = useNow(5000);
 
-  const load = useCallback(() => api<TokenDetail>(`/tokens/${id}`).then(setT).catch(() => setMissing(true)), [id]);
-  useEffect(() => { load(); }, [load]);
+  // a wrong or missing key gets the same 404 as an unknown token
+  const load = useCallback(() => call<TokenDetail>().then(setT).catch(() => setMissing(true)), [call]);
+  useEffect(() => { setT(null); setMissing(false); load(); }, [load]);
   useSocket((m) => { m.type === 'queue' && load(); });
   useAnnouncements((a) => {
-    const mine = a.tokenId === id;
+    const mine = !!t && a.code === t.code;
     mine && setYourTurn(true);
     mine && navigator.vibrate?.([300, 120, 300]);
     mine && speak(`Token ${a.code.split('').join(' ')}, please go to ${a.counter}`);
@@ -31,14 +38,17 @@ export default function Status() {
 
   const phase = (missing && 'missing') || (t && 'ready') || 'loading';
   const VIEWS = {
-    missing: () => <Empty icon={XCircle} title="Token not found" hint="Check the link on your ticket." />,
+    missing: () => (
+      <Empty icon={XCircle} title="This link is invalid or has expired"
+        hint="Scan the QR code on your ticket again, or ask at the desk and staff can look up your token." />
+    ),
     loading: () => <div className="mx-auto max-w-xl space-y-4"><Skeleton className="h-36" /><Skeleton className="h-52" /><Skeleton className="h-40" /></div>,
     ready: () => (
       <div className="mx-auto flex max-w-xl flex-col gap-4">
         <Header t={t!} />
         <AnimatePresence mode="wait">
           <motion.div key={t!.state} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-            {STATE_PANELS[t!.state]({ t: t!, now, reload: load })}
+            {STATE_PANELS[t!.state]({ t: t!, now, reload: load, call })}
           </motion.div>
         </AnimatePresence>
         <WhyChanged t={t!} now={now} />
@@ -78,7 +88,7 @@ function Header({ t }: { t: TokenDetail }) {
   );
 }
 
-type PanelProps = { t: TokenDetail; now: number; reload: () => void };
+type PanelProps = { t: TokenDetail; now: number; reload: () => void; call: ReturnType<typeof tokenApi> };
 
 const STATE_PANELS: Record<TokenState, (p: PanelProps) => ReactNode> = {
   WAITING: (p) => <Waiting {...p} />,
@@ -99,7 +109,7 @@ const STATE_PANELS: Record<TokenState, (p: PanelProps) => ReactNode> = {
       <Shuffle className="mx-auto size-10 text-violet-600" />
       <div className="mt-2 text-xl font-bold">You've been redirected</div>
       <p className="mt-1 text-ink-2">Your new token keeps your original arrival time, so you aren't sent to the back.</p>
-      {t.child && <Link to={`/status/${t.child.id}`}><Button className="mt-4" icon={ArrowRight}>Track {t.child.code}</Button></Link>}
+      {t.child && <Link to={statusLink(t.child.id, t.child.key)}><Button className="mt-4" icon={ArrowRight}>Track {t.child.code}</Button></Link>}
     </Card>
   ),
   CANCELLED: () => <Message icon={XCircle} tone="text-muted" title="Token cancelled" body="You can take a new token at the kiosk anytime." />,
@@ -113,12 +123,12 @@ const Message = ({ icon: Icon, tone, title, body }: { icon: typeof CheckCircle2;
   </Card>
 );
 
-function Waiting({ t, now, reload }: PanelProps) {
+function Waiting({ t, now, reload, call }: PanelProps) {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [awayOpen, setAwayOpen] = useState(false);
   const { run, busy } = useAction();
-  const away = (minutes: number) => run('away', () => api(`/tokens/${t.id}/away`, { json: { minutes } }), () => `We'll hold your place for ${minutes} min`).then(() => { setAwayOpen(false); reload(); });
-  const cancel = () => run('cancel', () => api(`/tokens/${t.id}/cancel`, { json: {} }), () => 'Token cancelled').then(() => { setConfirmCancel(false); reload(); });
+  const away = (minutes: number) => run('away', () => call('/away', { minutes }), () => `We'll hold your place for ${minutes} min`).then(() => { setAwayOpen(false); reload(); });
+  const cancel = () => run('cancel', () => call('/cancel', {}), () => 'Token cancelled').then(() => { setConfirmCancel(false); reload(); });
   const steppedAway = new Date(t.notBefore).getTime() > now;
 
   return (

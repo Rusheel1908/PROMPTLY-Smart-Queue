@@ -3,7 +3,7 @@ import { AlertTriangle, BellRing, Maximize, Volume2, VolumeX } from 'lucide-reac
 import { useRef, useState, type ReactNode } from 'react';
 import { COUNTER_META, cx, fmtAgo, fmtMin, serviceIcon } from '../lib/format';
 import { useAnnouncements, useNow, useSnapshot } from '../lib/live';
-import type { Announcement } from '../lib/types';
+import type { Announcement, PublicSnapshot } from '../lib/types';
 
 /** Two-note chime via WebAudio: no asset files needed. */
 function chime(ctx: AudioContext) {
@@ -23,7 +23,7 @@ function chime(ctx: AudioContext) {
 }
 
 export default function Board() {
-  const { snap } = useSnapshot();
+  const { snap } = useSnapshot<PublicSnapshot>();
   const now = useNow(1000);
   const [sound, setSound] = useState(false);
   const [flash, setFlash] = useState<Announcement | null>(null);
@@ -44,7 +44,7 @@ export default function Board() {
   };
 
   const latest = snap?.recentCalls.find((c) => c.state === 'CALLED') ?? snap?.recentCalls[0];
-  const hero = flash ?? (latest && { code: latest.code, counter: latest.counter ?? '', recall: false, tokenId: latest.id });
+  const hero = flash ?? (latest && { code: latest.code, counter: latest.counter ?? '', recall: false });
   const upNext = (snap?.tokens ?? []).filter((t) => t.state === 'WAITING' && t.position != null).sort((a, b) => a.position! - b.position!).slice(0, 8);
   const svcName = Object.fromEntries((snap?.services ?? []).map((s) => [s.id, s.name]));
 
@@ -107,7 +107,7 @@ export default function Board() {
             <ul className="flex flex-col gap-2">
               <AnimatePresence initial={false}>
                 {upNext.map((t, i) => (
-                  <motion.li key={t.id} layout initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
+                  <motion.li key={t.code} layout initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
                     className={cx('flex items-center gap-4 rounded-xl px-4 py-3', i === 0 ? 'bg-white/12' : 'bg-white/[0.03]')}>
                     <span className="w-6 text-white/40 tabular">{i + 1}</span>
                     <span className="w-24 font-mono text-2xl font-bold">{t.code}</span>
@@ -141,7 +141,7 @@ export default function Board() {
             <div className="mb-3 text-sm font-semibold tracking-[0.2em] text-white/60 uppercase">Recently called</div>
             <div className="flex flex-wrap gap-2">
               {(snap?.recentCalls ?? []).slice(0, 8).map((c) => (
-                <span key={c.id + c.calledAt} className="rounded-lg bg-white/[0.06] px-2.5 py-1 text-sm"><b className="font-mono">{c.code}</b> <span className="text-white/50">→ {c.counter} · {fmtAgo(c.calledAt, now)}</span></span>
+                <span key={c.code + c.calledAt} className="rounded-lg bg-white/[0.06] px-2.5 py-1 text-sm"><b className="font-mono">{c.code}</b> <span className="text-white/50">→ {c.counter} · {fmtAgo(c.calledAt, now)}</span></span>
               ))}
             </div>
           </div>

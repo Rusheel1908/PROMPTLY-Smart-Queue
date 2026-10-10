@@ -89,6 +89,7 @@ model Token {
   counterId       String?
   counter         Counter?    @relation(fields: [counterId], references: [id])
   parentTokenId   String?
+  secret          String      @unique // per-token access key from the QR link, base64url(24 random bytes)
   etaChanges      EtaChange[]
 
   @@index([state, serviceId])

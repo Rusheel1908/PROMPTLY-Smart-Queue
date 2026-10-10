@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { handle, requireStaff } from '../lib/http.js';
+import { handle, isStaff, requireStaff } from '../lib/http.js';
 import { evaluate, SPECS } from '../sim/evaluate.js';
 import { resetDemo, spawnDemo, whatIf } from '../services/actions.js';
-import { metrics, snapshot } from '../services/queue.js';
+import { metrics, snapshot, SNAPSHOT_VIEWS } from '../services/queue.js';
 
 export const opsRouter = Router();
 
@@ -22,8 +22,8 @@ const Lab = z.object({
   policies: z.array(z.string()).optional(),
 });
 
-/** Public read model: board, kiosk and status pages use it (anonymous codes only, no PII). */
-opsRouter.get('/snapshot', handle(() => snapshot()));
+/** Read model for every screen. Without the staff PIN it is reduced to what the board shows: codes, no token ids. */
+opsRouter.get('/snapshot', handle((req) => snapshot().then(SNAPSHOT_VIEWS[isStaff(req) ? 'staff' : 'public'])));
 opsRouter.get('/metrics', handle(() => metrics()));
 opsRouter.get('/auth/check', requireStaff, handle(async () => ({ ok: true })));
 

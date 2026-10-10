@@ -1,7 +1,7 @@
-import { Router } from 'express';
+import { RequestHandler, Router } from 'express';
 import { z } from 'zod';
 import { handle, isStaff, must, rateLimit, requireStaff } from '../lib/http.js';
-import { cancelToken, issueToken, reactivate, stepAway, tokenDetail } from '../services/actions.js';
+import { cancelToken, holdsToken, issueToken, reactivate, stepAway, tokenDetail } from '../services/actions.js';
 
 export const tokensRouter = Router();
 
@@ -11,6 +11,12 @@ const CreateToken = z.object({
 });
 const Away = z.object({ minutes: z.number().int().min(1).max(30).default(5) });
 
+/** Customer routes: open to the QR-link holder (x-token-key) or staff. Anyone else gets a plain 404. */
+const ownerOrStaff: RequestHandler = (req, _res, next) => {
+  const allowed = async () => isStaff(req) || holdsToken(req.params.id, req.header('x-token-key'));
+  allowed().then((ok) => { must(ok, 404, 'Token not found'); next(); }).catch(next);
+};
+
 tokensRouter.post('/', rateLimit(30, 60_000), handle(async (req) => {
   const body = CreateToken.parse(req.body);
   // priority classes are set or verified by staff, never self-selected at the kiosk
@@ -18,7 +24,7 @@ tokensRouter.post('/', rateLimit(30, 60_000), handle(async (req) => {
   return issueToken(body.serviceId, body.class, isStaff(req) ? 'staff' : 'kiosk');
 }, 201));
 
-tokensRouter.get('/:id', rateLimit(120, 60_000), handle((req) => tokenDetail(req.params.id)));
-tokensRouter.post('/:id/away', rateLimit(20, 60_000), handle((req) => stepAway(req.params.id, Away.parse(req.body ?? {}).minutes)));
-tokensRouter.post('/:id/cancel', rateLimit(20, 60_000), handle((req) => cancelToken(req.params.id)));
+tokensRouter.get('/:id', rateLimit(120, 60_000), ownerOrStaff, handle((req) => tokenDetail(req.params.id)));
+tokensRouter.post('/:id/away', rateLimit(20, 60_000), ownerOrStaff, handle((req) => stepAway(req.params.id, Away.parse(req.body ?? {}).minutes)));
+tokensRouter.post('/:id/cancel', rateLimit(20, 60_000), ownerOrStaff, handle((req) => cancelToken(req.params.id)));
 tokensRouter.post('/:id/reactivate', requireStaff, handle((req) => reactivate(req.params.id, 'staff')));

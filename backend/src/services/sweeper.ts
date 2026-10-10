@@ -2,7 +2,7 @@ import type { Token } from '@prisma/client';
 import { CALL_WINDOW_MS, MIN } from '../engine/types.js';
 import { prisma } from '../lib/db.js';
 import { broadcast } from '../realtime.js';
-import { missToken } from './actions.js';
+import { announce, missToken } from './actions.js';
 import { logEvent, replan, serial } from './queue.js';
 
 type Called = Token & { service: { targetWaitS: number }; counter: { name: string } | null };
@@ -12,7 +12,7 @@ const ON_EXPIRY: ((t: Called) => Promise<unknown>)[] = [
   async (t) => {
     await prisma.token.update({ where: { id: t.id }, data: { recallCount: { increment: 1 }, lastCallAt: new Date() } });
     await logEvent('RECALLED', { tokenId: t.id, counterId: t.counterId ?? undefined, actor: 'system' });
-    broadcast('announce', { code: t.code, tokenId: t.id, counter: t.counter?.name, recall: true });
+    announce(t, t.counter?.name ?? '', true);
     broadcast('queue', { reason: 'auto-recall' });
   },
   (t) => missToken(t, 'system'),

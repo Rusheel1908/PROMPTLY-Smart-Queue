@@ -5,16 +5,16 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Card, Skeleton, useAction } from '../components/ui';
 import { api, staffPin } from '../lib/api';
-import { CLASS_META, cx, fmtClock, fmtMin, serviceIcon } from '../lib/format';
+import { CLASS_META, cx, fmtClock, fmtMin, serviceIcon, statusLink } from '../lib/format';
 import { useSnapshot } from '../lib/live';
-import type { Service, Token, TokenClass } from '../lib/types';
+import type { PublicSnapshot, Service, Token, TokenClass } from '../lib/types';
 
-type Issued = Token & { serviceName: string };
+type Issued = Token & { serviceName: string; secret: string };
 const CLASSES: TokenClass[] = ['NORMAL', 'APPOINTMENT', 'PRIORITY', 'EMERGENCY'];
 const TICKET_SECONDS = 25;
 
 export default function Kiosk() {
-  const { snap } = useSnapshot();
+  const { snap } = useSnapshot<PublicSnapshot>();
   const [serviceId, setServiceId] = useState<string | null>(null);
   const [cls, setCls] = useState<TokenClass>('NORMAL');
   const [staff, setStaff] = useState(() => !!staffPin.get());
@@ -164,7 +164,8 @@ function PinPrompt({ cls, onClose, onOk }: { cls: TokenClass | null; onClose: ()
 }
 
 function TicketOverlay({ t, onClose }: { t: Issued; onClose: () => void }) {
-  const url = `${location.origin}/status/${t.id}`;
+  const link = statusLink(t.id, t.secret);
+  const url = `${location.origin}${link}`;
   const meta = CLASS_META[t.class];
   useEffect(() => {
     const id = setTimeout(onClose, TICKET_SECONDS * 1000);
@@ -207,7 +208,7 @@ function TicketOverlay({ t, onClose }: { t: Issued; onClose: () => void }) {
           <div className="rounded-xl bg-white p-2 ring-1 ring-line"><QRCodeSVG value={url} size={96} /></div>
         </div>
         <div className="flex gap-2 px-6 pb-6">
-          <Link to={`/status/${t.id}`} className="flex-1"><Button className="w-full" icon={ExternalLink}>Track live</Button></Link>
+          <Link to={link} className="flex-1"><Button className="w-full" icon={ExternalLink}>Track live</Button></Link>
           <Button variant="ghost" onClick={onClose} icon={ArrowRight}>Done</Button>
         </div>
         <motion.div className="h-1 bg-brand" initial={{ width: '100%' }} animate={{ width: '0%' }} transition={{ duration: TICKET_SECONDS, ease: 'linear' }} />

@@ -16,7 +16,7 @@ wait ceiling (no starvation). Every token's call time is **forecast by replaying
    npx prisma db push      # creates tables from prisma/schema.prisma
    npm run db:seed         # demo branch: 4 services, 5 counters (labeled demo data)
    npm run dev             # http://localhost:4000/api/health
-   npm test                # engine + simulator tests
+   npm test                # engine tests + API tests (API tests use a separate promptly_test DB, created automatically)
    ```
 3. Frontend (second terminal)
    ```
@@ -28,11 +28,21 @@ wait ceiling (no starvation). Every token's call time is **forecast by replaying
 
 Staff screens (Counter, Ops) and priority classes at the kiosk need the staff PIN: `STAFF_PIN` in `backend/.env` (default `1234`).
 
+**Token privacy.** Each token has a random secret, returned once when it is issued and embedded in the ticket QR as
+`/status/:id?k=<secret>`. Viewing, stepping away from or cancelling a token needs that key (`x-token-key` header) or the
+staff PIN; anything else gets a 404. Without the PIN, `/api/snapshot` and the WebSocket carry only what the board shows
+(codes, services, states, counters, ETAs), with no token ids.
+
+> Upgrading an existing dev database: the new `Token.secret` column is required, so clear the demo tokens first.
+> Either press **Reset demo** on `/ops` while the old version is still running, or run
+> `echo 'TRUNCATE "EtaChange", "Event", "Token" RESTART IDENTITY;' | npx prisma db execute --stdin`.
+> Then `npx prisma db push`. Services and counters are kept either way.
+
 ## Screens
 | Route | Who | What |
 |---|---|---|
 | `/` | Customer | Kiosk: live wait band per service, staff-verified priority, ticket with QR |
-| `/status/:id` | Customer | ETA band, promise, people ahead, "why my time changed", step away / cancel, your-turn alert |
+| `/status/:id?k=…` | Customer | ETA band, promise, people ahead, "why my time changed", step away / cancel, your-turn alert |
 | `/counter` | Staff | Call next with "why this customer", call-window ring, recall / missed / redirect, keyboard shortcuts |
 | `/board` | Display | Now calling with chime + voice, counters, up next |
 | `/ops` | Supervisor | KPIs, promise-risk heatmap, what-if planner (simulate, then apply), live event log, demo tools |

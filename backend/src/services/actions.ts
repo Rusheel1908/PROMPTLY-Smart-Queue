@@ -9,6 +9,7 @@ import {
 } from '../engine/types.js';
 import { prisma } from '../lib/db.js';
 import { fail, must } from '../lib/http.js';
+import { newTokenSecret, safeEqual } from '../lib/secret.js';
 import { broadcast } from '../realtime.js';
 import {
   CounterOverride, FORECAST_RUNS, loadWorld, logEvent, publicToken, replan, serial, toEngine,
@@ -49,7 +50,7 @@ export const issueToken = (serviceId: string, cls: TokenClass, actor = 'kiosk') 
   const token = await prisma.token.create({
     data: {
       code: `${service.prefix}-${String(count + 1).padStart(3, '0')}`,
-      serviceId, class: cls,
+      serviceId, class: cls, secret: newTokenSecret(),
       deadline: new Date(now + service.targetWaitS * 1000 * CLASS_FACTOR[cls]),
     },
   });
@@ -61,8 +62,15 @@ export const issueToken = (serviceId: string, cls: TokenClass, actor = 'kiosk') 
     where: { id: token.id },
     data: { promiseP90: p90 == null ? null : new Date(toPromise(p90, now, PROMISE_MIN_LEAD_MS)) },
   });
-  return { ...publicToken(saved, now, {}), serviceName: service.name };
+  // the only response that carries the secret: it becomes the customer's QR link
+  return { ...publicToken(saved, now, {}), serviceName: service.name, secret: saved.secret };
 });
+
+/** True only for the holder of this token's QR link. A missing token answers the same as a wrong key. */
+export async function holdsToken(id: string, key: string | undefined) {
+  const token = await prisma.token.findUnique({ where: { id }, select: { secret: true } });
+  return safeEqual(token?.secret, key);
+}
 
 export async function tokenDetail(id: string) {
   const now = Date.now();
@@ -72,7 +80,7 @@ export async function tokenDetail(id: string) {
   })) ?? fail(404, 'Token not found');
   const [waiting, child] = await Promise.all([
     prisma.token.findMany({ where: { state: 'WAITING', etaP50: { not: null } }, select: { id: true, etaP50: true } }),
-    prisma.token.findFirst({ where: { parentTokenId: id }, select: { id: true, code: true } }),
+    prisma.token.findFirst({ where: { parentTokenId: id }, select: { id: true, code: true, secret: true } }),
   ]);
   const ahead = waiting.filter((t) => token.etaP50 && t.etaP50! < token.etaP50).length;
   const pos = Object.fromEntries(waiting.filter((t) => t.id === token.id).map((t) => [t.id, ahead]));
@@ -82,7 +90,8 @@ export async function tokenDetail(id: string) {
     counterName: token.counter?.name ?? null,
     ahead, queueSize: waiting.length,
     changes: token.etaChanges.map((c) => ({ ts: c.ts, deltaS: c.deltaS, reason: c.reason })),
-    child,
+    // the caller proved access to the parent, so they may follow the redirect
+    child: child && { id: child.id, code: child.code, key: child.secret },
   };
 }
 
@@ -123,8 +132,9 @@ export const reactivate = (id: string, actor: string) => serial(async () => {
 
 /* ---------- counters ---------- */
 
-const announce = (t: Token, counterName: string, recall: boolean) =>
-  broadcast('announce', { code: t.code, tokenId: t.id, counter: counterName, recall });
+/** Public "now calling" message for boards and status pages: the code only, never the token id. */
+export const announce = (t: Pick<Token, 'code'>, counterName: string, recall: boolean) =>
+  broadcast('announce', { code: t.code, counter: counterName, recall });
 
 export const callNext = (counterId: string, actor: string) => serial(async () => {
   const counter = await getCounter(counterId);
@@ -232,7 +242,7 @@ export const redirect = (counterId: string, serviceId: string, actor: string) =>
     prisma.token.create({
       data: {
         code: `${target.prefix}-${String(count + 1).padStart(3, '0')}`,
-        serviceId, class: t.class, parentTokenId: t.id, redirectDepth: t.redirectDepth + 1,
+        serviceId, class: t.class, parentTokenId: t.id, redirectDepth: t.redirectDepth + 1, secret: newTokenSecret(),
         arrivedAt: t.arrivedAt,
         creditedArrival: t.creditedArrival, // not penalized for the system's routing
         deadline: new Date(t.creditedArrival.getTime() + target.targetWaitS * 1000 * CLASS_FACTOR[t.class]),
