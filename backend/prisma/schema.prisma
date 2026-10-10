@@ -1,0 +1,101 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CounterStatus {
+  OPEN
+  PAUSED
+  CLOSED
+}
+
+enum TokenClass {
+  EMERGENCY
+  PRIORITY
+  APPOINTMENT
+  NORMAL
+}
+
+enum TokenState {
+  WAITING
+  CALLED
+  SERVING
+  DONE
+  MISSED
+  NO_SHOW
+  REDIRECTED
+  CANCELLED
+}
+
+model Service {
+  id          String         @id @default(cuid())
+  name        String
+  prefix      String         @unique
+  targetWaitS Int
+  priorMu     Float
+  priorSigma  Float
+  skills      CounterSkill[]
+  tokens      Token[]
+}
+
+model Counter {
+  id     String         @id @default(cuid())
+  name   String
+  status CounterStatus  @default(OPEN)
+  skills CounterSkill[]
+  tokens Token[]
+}
+
+model CounterSkill {
+  counterId String
+  serviceId String
+  counter   Counter @relation(fields: [counterId], references: [id])
+  service   Service @relation(fields: [serviceId], references: [id])
+
+  @@id([counterId, serviceId])
+}
+
+model Token {
+  id              String     @id @default(cuid())
+  code            String
+  serviceId       String
+  service         Service    @relation(fields: [serviceId], references: [id])
+  class           TokenClass @default(NORMAL)
+  state           TokenState @default(WAITING)
+  arrivedAt       DateTime   @default(now())
+  creditedArrival DateTime   @default(now())
+  deadline        DateTime
+  notBefore       DateTime   @default(now())
+  missCount       Int        @default(0)
+  promiseP90      DateTime?
+  counterId       String?
+  counter         Counter?   @relation(fields: [counterId], references: [id])
+  parentTokenId   String?
+  etaChanges      EtaChange[]
+
+  @@index([state, serviceId])
+}
+
+model Event {
+  seq       Int      @id @default(autoincrement())
+  ts        DateTime @default(now())
+  type      String
+  tokenId   String?
+  counterId String?
+  payload   Json?
+  actor     String?
+}
+
+model EtaChange {
+  id         Int      @id @default(autoincrement())
+  tokenId    String
+  token      Token    @relation(fields: [tokenId], references: [id])
+  ts         DateTime @default(now())
+  deltaS     Int
+  reason     String
+  causeEvent Int?
+}
