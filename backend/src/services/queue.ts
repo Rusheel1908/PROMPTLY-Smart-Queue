@@ -248,7 +248,9 @@ export async function snapshot() {
 }
 
 /** Non-staff actors, and 'staff' from events logged before individual accounts existed. */
-const ACTOR_LABELS: Record<string, string> = { system: 'System', kiosk: 'Kiosk', demo: 'Demo', staff: 'Staff (shared PIN)' };
+const ACTOR_LABELS: Record<string, string> = {
+  system: 'System', kiosk: 'Kiosk', demo: 'Demo', staff: 'Staff (shared PIN)', booking: 'Booking page', 'booking-link': 'Booking link',
+};
 const actorName = (actor: string | null, staffName: Record<string, string>) =>
   (actor == null ? null : staffName[actor] ?? ACTOR_LABELS[actor] ?? 'Unknown');
 

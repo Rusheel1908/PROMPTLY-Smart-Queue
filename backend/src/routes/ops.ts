@@ -9,7 +9,7 @@ import { applySuggestion, getSuggestions } from '../services/suggestions.js';
 import { metrics, snapshot, SNAPSHOT_VIEWS } from '../services/queue.js';
 import { staffStats } from '../services/staffStats.js';
 import { pushPublicKey } from '../services/push.js';
-import { todaysAppointments } from '../services/appointments.js';
+import { DEMO_TIMINGS, demoBooking, todaysAppointments } from '../services/appointments.js';
 
 export const opsRouter = Router();
 
@@ -21,6 +21,7 @@ const WhatIf = z.object({
   })),
 });
 const Spawn = z.object({ count: z.number().int().min(1).max(20).default(6) });
+const DemoBooking = z.object({ timing: z.enum(DEMO_TIMINGS) });
 const Lab = z.object({
   days: z.number().int().min(1).max(30).default(8),
   seed: z.number().int().min(1).default(1),
@@ -44,6 +45,8 @@ opsRouter.get('/ops/staff-stats', requireRole('staff-stats'), handle(() => staff
 opsRouter.get('/ops/appointments', requireRole('view-appointments'), handle(() => todaysAppointments()));
 opsRouter.post('/demo/spawn', requireRole('demo'), handle(async (req) => spawnDemo(Spawn.parse(req.body ?? {}).count)));
 opsRouter.post('/demo/reset', requireRole('demo'), handle((req) => resetDemo(actor(req))));
+/** A booking whose check-in window is open now ("on-time") or already closed ("late"), to show check-in at any hour. */
+opsRouter.post('/demo/booking', requireRole('demo'), handle((req) => demoBooking(DemoBooking.parse(req.body ?? {}).timing, actor(req)), 201));
 
 /** Simulation Lab: every policy on identical SYNTHETIC days. */
 opsRouter.get('/lab/policies', handle(async () =>

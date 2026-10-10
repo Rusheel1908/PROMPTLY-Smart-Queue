@@ -2,6 +2,7 @@ import type { Appointment, AppointmentStatus, Service, Token, TokenClass } from 
 import {
   APPOINTMENT_CONFIG, appointmentDeadline, bookableSlots, checkInPhase, checkInWindow, dayStart, slotMinutes, type CheckInPhase,
 } from '../engine/appointments.js';
+import { MIN } from '../engine/types.js';
 import * as clock from '../lib/clock.js';
 import { prisma } from '../lib/db.js';
 import { fail, must } from '../lib/http.js';
@@ -59,6 +60,7 @@ export async function listSlots(serviceId: string) {
   const taken = await placesTaken(serviceId, starts);
   return {
     serviceId, serviceName: service.name, slotMin: slotMinutes(service.prefix), capacity: cfg.capacityPerSlot,
+    checkIn: { opensBeforeMin: cfg.checkIn.opensBeforeMs / MIN, closesAfterMin: cfg.checkIn.closesAfterMs / MIN }, // for the booking page's wording
     slots: starts.map((t) => ({ start: new Date(t), left: cfg.capacityPerSlot - (taken[t] ?? 0) })).filter((s) => s.left > 0),
   };
 }
@@ -71,19 +73,41 @@ async function uniqueCode() {
   return fail(503, 'Could not create a booking code, try again');
 }
 
+/** Create, log and re-forecast. Call inside serial(). The response is the only one that carries the secret: it becomes the booking link. */
+async function createBooking(service: Service, slotStart: number, actor: string, demo?: DemoTiming) {
+  const a = await prisma.appointment.create({
+    // createdAt on the queue clock (like token arrival), so "booked inside the reminder lead" uses one notion of now
+    data: { code: await uniqueCode(), secret: newTokenSecret(), serviceId: service.id, slotStart: new Date(slotStart), createdAt: new Date(clock.now()) },
+  });
+  const payload = { appointmentId: a.id, serviceId: service.id, slotStart: a.slotStart.toISOString(), ...(demo && { demo }) };
+  const seq = await logEvent('APPOINTMENT_BOOKED', { payload, actor });
+  await replan(`A ${service.name} appointment was booked`, seq); // walk-in promises now count this expected arrival
+  return { ...view(a, service), secret: a.secret };
+}
+
 export const book = (serviceId: string, slotStart: number) => serial(async () => {
   const service = await serviceById(serviceId);
   must(bookableSlots(clock.now(), slotMinutes(service.prefix)).includes(slotStart), 400, 'That is not an open slot for this service');
   const taken = (await placesTaken(serviceId, [slotStart]))[slotStart] ?? 0;
   must(taken < cfg.capacityPerSlot, 409, 'That slot is full, please pick another');
-  const a = await prisma.appointment.create({
-    // createdAt on the queue clock (like token arrival), so "booked inside the reminder lead" uses one notion of now
-    data: { code: await uniqueCode(), secret: newTokenSecret(), serviceId, slotStart: new Date(slotStart), createdAt: new Date(clock.now()) },
-  });
-  const seq = await logEvent('APPOINTMENT_BOOKED', { payload: { appointmentId: a.id, serviceId, slotStart: a.slotStart.toISOString() }, actor: 'booking' });
-  await replan(`A ${service.name} appointment was booked`, seq); // walk-in promises now count this expected arrival
-  // the only response that carries the secret: it becomes the booking link
-  return { ...view(a, service), secret: a.secret };
+  return createBooking(service, slotStart, 'booking');
+});
+
+/** Demo booking times relative to now: check-in window open, or closed 15 min ago (late; the sweeper soon marks it a no-show). */
+const DEMO_SLOT = {
+  'on-time': (now: number) => now + 5 * MIN,
+  late: (now: number) => now - cfg.checkIn.closesAfterMs - 15 * MIN,
+} satisfies Record<string, (now: number) => number>;
+export type DemoTiming = keyof typeof DEMO_SLOT;
+export const DEMO_TIMINGS = Object.keys(DEMO_SLOT) as [DemoTiming, ...DemoTiming[]];
+
+/**
+ * Supervisor demo action: a Deposits booking at a demo time, off the slot grid and outside opening hours if need be,
+ * so on-time and late check-in can be shown at any hour. Booked through the page, the rules are the real ones.
+ */
+export const demoBooking = (timing: DemoTiming, actor: string) => serial(async () => {
+  const service = (await prisma.service.findUnique({ where: { prefix: 'D' } })) ?? fail(404, 'The demo needs the Deposits service (npm run db:seed)');
+  return createBooking(service, Math.floor(DEMO_SLOT[timing](clock.now()) / MIN) * MIN, actor, timing);
 });
 
 export async function appointmentDetail(id: string) {

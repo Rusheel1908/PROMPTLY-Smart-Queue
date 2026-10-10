@@ -198,6 +198,18 @@ describe('staff', () => {
     expect(list.body.appointments.map((x: { code: string }) => x.code)).toEqual([a.code, b.code]);
   });
 
+  it('demo bookings (supervisor only): "on-time" checks in as APPOINTMENT now, "late" joins as NORMAL', async () => {
+    await staff(app, 'ravi').post('/api/demo/booking', { timing: 'late' }).expect(403);
+    await staff(app).post('/api/demo/booking', { timing: 'soon' }).expect(400);
+    const onTime = (await staff(app).post('/api/demo/booking', { timing: 'on-time' }).expect(201)).body as Booking;
+    const late = (await staff(app).post('/api/demo/booking', { timing: 'late' }).expect(201)).body as Booking;
+    expect(new Date(onTime.slotStart).getTime()).toBe(at('10:05'));
+    expect(new Date(late.slotStart).getTime()).toBe(at('09:35')); // its window closed at 09:45
+    expect((await checkIn(onTime).expect(200)).body.token.class).toBe('APPOINTMENT');
+    const r = await request(app).post('/api/appointments/check-in').send({ code: late.code }).expect(200);
+    expect(r.body).toMatchObject({ appointment: { status: 'LATE_DOWNGRADED' }, token: { class: 'NORMAL' } });
+  });
+
   it('demo reset leaves exactly one booking', async () => {
     await booked('10:30');
     await staff(app).post('/api/demo/reset').expect(200);
