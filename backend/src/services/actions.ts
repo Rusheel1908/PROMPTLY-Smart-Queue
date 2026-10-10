@@ -253,7 +253,7 @@ export const redirect = (counterId: string, serviceId: string, actor: string) =>
       },
     }),
   ]);
-  const seq = await logEvent('REDIRECTED', { tokenId: child.id, counterId, payload: { from: t.code, to: child.code }, actor });
+  const seq = await logEvent('REDIRECTED', { tokenId: child.id, counterId, payload: { parentId: t.id, from: t.code, to: child.code }, actor });
   await replan(`A customer was redirected into ${target.name}`, seq);
   return { ok: true, child: { id: child.id, code: child.code } };
 });
@@ -262,6 +262,10 @@ export const updateCounter = (id: string, change: { status?: CounterStatus; skil
   const counter = await getCounter(id);
   const skills = change.skills && [...new Set(change.skills)];
   skills && must(await prisma.service.count({ where: { id: { in: skills } } }) === skills.length, 404, 'Unknown service');
+  // a counter that is no longer open hands back the customer it was calling, original deadline intact
+  const released = (change.status ?? counter.status) === 'OPEN' ? [] : (await prisma.token.findMany({
+    where: { counterId: id, state: 'CALLED' }, select: { id: true },
+  })).map((t) => t.id);
   await prisma.$transaction([
     prisma.counter.update({ where: { id }, data: { status: change.status ?? counter.status } }),
     ...(skills
@@ -270,16 +274,15 @@ export const updateCounter = (id: string, change: { status?: CounterStatus; skil
         prisma.counterSkill.createMany({ data: skills.map((serviceId) => ({ counterId: id, serviceId })) }),
       ]
       : []),
-    // a counter that is no longer open hands back the customer it was calling, original deadline intact
     prisma.token.updateMany({
-      where: { counterId: id, state: 'CALLED', counter: { is: { status: { not: 'OPEN' } } } },
+      where: { id: { in: released } },
       data: { state: 'WAITING', counterId: null, calledAt: null, lastCallAt: null },
     }),
   ]);
   const reason = change.status && change.status !== counter.status
     ? STATUS_REASON[change.status](counter.name)
     : `${counter.name} changed which services it handles`;
-  const seq = await logEvent('COUNTER_CHANGED', { counterId: id, payload: change, actor });
+  const seq = await logEvent('COUNTER_CHANGED', { counterId: id, payload: { ...change, released }, actor });
   await replan(reason, seq);
   return { ok: true };
 });
