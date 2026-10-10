@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { Layout } from './components/Layout';
+import { NotFound } from './components/NotFound';
 import { PageBoundary } from './components/PageBoundary';
 import { StaffGate, StaffProvider } from './components/StaffGate';
 import { PageLoader, ToastProvider } from './components/ui';
@@ -30,6 +31,7 @@ export default function App() {
                     <Route path="/status/:id" element={<Status />} />
                     <Route path="/ops" element={<StaffGate title="Supervisor ops" need="staff-stats"><Ops /></StaffGate>} />
                     <Route path="/lab" element={<Lab />} />
+                    <Route path="*" element={<NotFound />} />
                   </Routes>
                 </Suspense>
               </PageBoundary>
