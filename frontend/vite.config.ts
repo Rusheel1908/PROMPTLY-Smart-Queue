@@ -2,6 +2,11 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
+declare const process: { env: Record<string, string | undefined> }; // Node runs this file; the app's tsconfig has no Node types
+
+/** The dev server proxies /api and /ws to the backend; another port (e.g. a test API on 4100) via VITE_PROXY_TARGET. */
+const API = process.env.VITE_PROXY_TARGET ?? 'http://localhost:4000';
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
@@ -21,8 +26,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:4000',
-      '/ws': { target: 'ws://localhost:4000', ws: true },
+      '/api': API,
+      '/ws': { target: API.replace(/^http/, 'ws'), ws: true },
     },
   },
 });
