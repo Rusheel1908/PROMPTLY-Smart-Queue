@@ -1,6 +1,6 @@
 import type { IncomingMessage, Server } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
-import { config, LIMITS } from './config.js';
+import { config, isAllowedOrigin, LIMITS } from './config.js';
 
 let wss: WebSocketServer | undefined;
 
@@ -9,7 +9,7 @@ const ALLOW_NO_ORIGIN = { development: true, test: true, production: false } as 
 
 /** First failing rule rejects the upgrade with its HTTP status. */
 const UPGRADE_RULES: [(req: IncomingMessage, hub: WebSocketServer) => boolean, number, string][] = [
-  [(req) => (req.headers.origin ? config.CORS_ORIGIN.includes(req.headers.origin) : ALLOW_NO_ORIGIN[config.NODE_ENV]), 403, 'Origin not allowed'],
+  [(req) => (req.headers.origin ? isAllowedOrigin(req.headers.origin, config) : ALLOW_NO_ORIGIN[config.NODE_ENV]), 403, 'Origin not allowed'],
   [(_req, hub) => hub.clients.size < LIMITS.wsMaxConnections, 503, 'Too many connections'],
 ];
 

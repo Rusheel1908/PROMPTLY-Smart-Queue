@@ -25,6 +25,8 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // phones reach the dev server through a cloudflared quick tunnel (scripts/start-tunnel.ps1), whose Host is <random>.trycloudflare.com
+    allowedHosts: ['.trycloudflare.com'],
     proxy: {
       '/api': API,
       '/ws': { target: API.replace(/^http/, 'ws'), ws: true },

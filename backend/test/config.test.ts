@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeProblems, parseConfig } from '../src/config.js';
+import { describeProblems, isAllowedOrigin, parseConfig } from '../src/config.js';
 
 const BASE = { DATABASE_URL: 'postgresql://u:p@localhost:5432/promptly', NODE_ENV: 'production' };
 
@@ -41,6 +41,19 @@ describe('other variables', () => {
       NODE_ENV: 'development', PORT: 4000,
       CORS_ORIGIN: ['https://a.example.com', 'http://localhost:5173'], TRUST_PROXY: 1,
     });
+  });
+
+  it('allowed origins: the CORS_ORIGIN list, plus cloudflared quick tunnels in development only', () => {
+    const dev = { CORS_ORIGIN: ['http://localhost:5173'], NODE_ENV: 'development' as const };
+    const tunnel = 'https://simple-tails-anyway-cooper.trycloudflare.com';
+    expect(isAllowedOrigin('http://localhost:5173', dev)).toBe(true);
+    expect(isAllowedOrigin(tunnel, dev)).toBe(true);
+    for (const other of ['http://simple-tails.trycloudflare.com', 'https://trycloudflare.com', 'https://a.trycloudflare.com.evil.example',
+      'https://evil-trycloudflare.com', 'https://a.trycloudflare.com/x', 'https://evil.example']) {
+      expect(isAllowedOrigin(other, dev)).toBe(false);
+    }
+    expect(isAllowedOrigin(tunnel, { ...dev, NODE_ENV: 'production' })).toBe(false);
+    expect(isAllowedOrigin(tunnel, { ...dev, NODE_ENV: 'test' })).toBe(false);
   });
 
   it('lists every problem at once', () => {

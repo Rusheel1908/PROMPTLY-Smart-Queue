@@ -42,6 +42,19 @@ export const PUSH_HOSTS = [
   '.push.apple.com', // Safari, and iPhone home-screen apps
 ] as const;
 
+/**
+ * Development only: the origin of a cloudflared quick tunnel (scripts/start-tunnel.ps1), https://<random words>.trycloudflare.com,
+ * through which phones open the local demo. It changes on every start, so it is matched here instead of listed in CORS_ORIGIN.
+ */
+export const DEV_TUNNEL_ORIGIN = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/;
+
+/** Browser origins the API accepts, for CORS and the WebSocket upgrade alike: CORS_ORIGIN, plus tunnels in development. */
+export const allowedOrigins = (cfg: Pick<Config, 'CORS_ORIGIN' | 'NODE_ENV'>): (string | RegExp)[] =>
+  [...cfg.CORS_ORIGIN, ...(cfg.NODE_ENV === 'development' ? [DEV_TUNNEL_ORIGIN] : [])];
+
+export const isAllowedOrigin = (origin: string, cfg: Pick<Config, 'CORS_ORIGIN' | 'NODE_ENV'>) =>
+  allowedOrigins(cfg).some((o) => (typeof o === 'string' ? o === origin : o.test(origin)));
+
 export const LIMITS = {
   jsonBody: '20kb',
   wsMaxConnections: 500,

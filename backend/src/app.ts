@@ -2,7 +2,7 @@ import express, { ErrorRequestHandler } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { ZodError } from 'zod';
-import { config, LIMITS } from './config.js';
+import { allowedOrigins, config, LIMITS } from './config.js';
 import { fail, HttpError } from './lib/http.js';
 import { authRouter } from './routes/auth.js';
 import { countersRouter } from './routes/counters.js';
@@ -17,7 +17,7 @@ export function createApp() {
   const app = express();
   app.set('trust proxy', config.TRUST_PROXY); // so req.ip (and the rate limits) see the real client behind Render/Vercel
   app.use(helmet());
-  app.use(cors({ origin: config.CORS_ORIGIN }));
+  app.use(cors({ origin: allowedOrigins(config) }));
   app.use(express.json({ limit: LIMITS.jsonBody }));
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
