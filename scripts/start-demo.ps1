@@ -6,16 +6,16 @@
   Checks Docker and the database container (promptly-db), stops servers left over on ports 4000 and 5173,
   starts the API and the web app in their own windows, waits until both answer, and opens
   http://localhost:5173/ in the browser. Running it again restarts both servers.
-  Staff PINs and the click-by-click demo script are in DEMO.md.
+  Phones: run .\scripts\start-tunnel.ps1 afterwards. Staff PINs and the demo script are in DEMO.md.
 
 .EXAMPLE
-  .\start-demo.ps1
+  .\scripts\start-demo.ps1
 .EXAMPLE
-  .\start-demo.ps1 -NoBrowser
+  .\scripts\start-demo.ps1 -NoBrowser
 #>
 param([switch]$NoBrowser)
 
-$Root = $PSScriptRoot
+$Root = Split-Path $PSScriptRoot -Parent
 $Backend = Join-Path $Root 'backend'
 $Frontend = Join-Path $Root 'frontend'
 $Db = 'promptly-db'
@@ -102,6 +102,7 @@ if (-not (Select-String -Path $envFile -Pattern '^VAPID_PUBLIC_KEY=.+' -Quiet)) 
 }
 
 # ---------- Stop servers left over from an earlier run ----------
+# Only Node servers on our two ports: the server and the Node processes above it (npm, tsx watch or vite).
 function Stop-PortOwner([int]$port) {
   $owners = Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue |
     Select-Object -ExpandProperty OwningProcess -Unique
@@ -109,15 +110,14 @@ function Stop-PortOwner([int]$port) {
     $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$procId"
     if (-not $proc) { continue }
     if ($proc.Name -ne 'node.exe') { Stop-Demo "Port $port is used by $($proc.Name) (PID $procId). Close that program and run this again." }
-    # stop the whole node chain (npm, tsx watch or vite, the server) so nothing restarts it
-    $top = $proc
-    while ($top.ParentProcessId) {
-      $parent = Get-CimInstance Win32_Process -Filter "ProcessId=$($top.ParentProcessId)"
-      if (-not $parent -or $parent.Name -ne 'node.exe') { break }
-      $top = $parent
+    Say "Port $port is taken by an earlier server (PID $procId): restarting it"
+    $chain = @($proc)
+    $parent = Get-CimInstance Win32_Process -Filter "ProcessId=$($proc.ParentProcessId)"
+    while ($parent -and $parent.Name -eq 'node.exe') {
+      $chain += $parent
+      $parent = Get-CimInstance Win32_Process -Filter "ProcessId=$($parent.ParentProcessId)"
     }
-    Say "Port $port is taken by an earlier server (PID $($top.ProcessId)): restarting it"
-    & taskkill /PID $top.ProcessId /T /F 2>&1 | Out-Null
+    $chain | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
   }
 }
 Stop-PortOwner 4000
@@ -125,15 +125,14 @@ Stop-PortOwner 5173
 Start-Sleep -Seconds 1
 
 # ---------- Start the API and the web app, each in its own window ----------
+# A plain Command Prompt window that stays open (/k), so an error stays readable.
 function Start-Window([string]$title, [string]$dir, [string]$command) {
-  $script = "`$Host.UI.RawUI.WindowTitle = '$title'; Set-Location -LiteralPath '$dir'; $command"
-  $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
-  Start-Process powershell -ArgumentList '-NoExit', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded
+  Start-Process cmd.exe -WorkingDirectory $dir -ArgumentList "/k title $title & $command"
 }
 Say 'Starting the API in a new window (http://localhost:4000)'
-Start-Window 'Promptly API (port 4000)' $Backend 'npm run dev'
+Start-Window 'Promptly API - port 4000' $Backend 'npm run dev'
 Say 'Starting the web app in a new window (http://localhost:5173)'
-Start-Window 'Promptly web (port 5173)' $Frontend 'npm run dev'
+Start-Window 'Promptly web - port 5173' $Frontend 'npm run dev'
 
 function Wait-Http([string]$url, [string]$name, [int]$seconds) {
   for ($i = 0; $i -lt $seconds; $i++) {
@@ -161,5 +160,6 @@ Write-Host '  Ops      http://localhost:5173/ops       (supervisor login)'
 Write-Host '  Lab      http://localhost:5173/lab'
 Write-Host '  API      http://localhost:4000/api/health'
 Write-Host ''
+Write-Host 'Phones: run .\scripts\start-tunnel.ps1 and print tickets from the kiosk at the address it gives.'
 Write-Host 'Staff PINs and the demo script: DEMO.md. Before presenting: Ops > Reset demo.'
 Write-Host 'To stop: close the two server windows.'

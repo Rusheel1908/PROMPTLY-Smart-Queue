@@ -8,7 +8,9 @@ wait ceiling (no starvation). Every token's call time is **forecast by replaying
 **explained** on the customer's status page.
 
 ## Run locally
-On Windows, `.\start-demo.ps1` does all of this in one command; see [DEMO.md](DEMO.md) for the demo script and staff logins.
+On Windows, `.\scripts\start-demo.ps1` does all of this in one command, and `.\scripts\start-tunnel.ps1` puts it on a public https
+address (cloudflared quick tunnel) so phones can open the ticket QR codes; see [DEMO.md](DEMO.md) for the demo script
+and staff logins.
 
 1. PostgreSQL (Docker):
    `docker run -d --name promptly-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=promptly -p 5432:5432 postgres:16`
